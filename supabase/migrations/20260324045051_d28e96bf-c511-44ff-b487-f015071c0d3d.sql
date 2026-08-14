@@ -1,0 +1,1 @@
+UPDATE celebrities SET consent_status = 'approved' WHERE consent_status = 'pending';

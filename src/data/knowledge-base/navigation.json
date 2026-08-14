@@ -1,0 +1,157 @@
+{
+  "pages": [
+    {
+      "route": "/",
+      "name": "Home",
+      "description": "Landing page with featured celebrities and quick access to all services",
+      "keywords": ["home", "main", "start", "landing", "welcome"],
+      "features": ["browse celebrities", "featured content", "how it works", "search"],
+      "relatedPages": ["/celebrities", "/how-it-works"],
+      "quickActions": ["Browse celebrities", "Search for someone", "Learn how it works"]
+    },
+    {
+      "route": "/celebrities",
+      "name": "Browse Celebrities",
+      "description": "Search and filter celebrities by category, view their profiles and pricing",
+      "keywords": ["celebrity", "browse", "search", "filter", "categories", "find"],
+      "features": ["search by name", "filter by category", "view ratings", "see pricing"],
+      "relatedPages": ["/celebrity/:id", "/book/:celebrityId/:serviceType"],
+      "quickActions": ["Search celebrities", "Filter by category", "View top rated"]
+    },
+    {
+      "route": "/celebrity/:id",
+      "name": "Celebrity Profile",
+      "description": "View detailed celebrity information, reviews, pricing and booking options",
+      "keywords": ["profile", "details", "about", "book", "services", "pricing"],
+      "features": ["view bio", "see services", "check availability", "read reviews", "book service"],
+      "relatedPages": ["/book/:celebrityId/:serviceType", "/celebrities"],
+      "quickActions": ["Book this celebrity", "View all services", "Read reviews"]
+    },
+    {
+      "route": "/book/:celebrityId/:serviceType",
+      "name": "Booking Form",
+      "description": "Fill out booking details for celebrity service",
+      "keywords": ["book", "booking", "form", "order", "request"],
+      "features": ["recipient details", "message input", "special instructions", "payment"],
+      "relatedPages": ["/bookings", "/celebrity/:id"],
+      "quickActions": ["Fill booking form", "View pricing", "Complete payment"]
+    },
+    {
+      "route": "/bookings",
+      "name": "My Bookings",
+      "description": "View all your bookings, track status and see delivery",
+      "keywords": ["bookings", "orders", "history", "status", "my requests"],
+      "features": ["view status", "track delivery", "cancel booking", "review celebrity"],
+      "relatedPages": ["/booking/:id", "/celebrity/:id"],
+      "quickActions": ["View pending bookings", "Check delivered", "Write review"]
+    },
+    {
+      "route": "/ai-music",
+      "name": "AI Music Studio",
+      "description": "Generate custom songs using AI with lyrics and melodies",
+      "keywords": ["music", "song", "generate", "ai music", "lyrics", "melody"],
+      "features": ["generate lyrics", "create music", "download songs", "custom genres"],
+      "relatedPages": ["/my-music"],
+      "quickActions": ["Generate new song", "View my music", "Pick a genre"]
+    },
+    {
+      "route": "/my-music",
+      "name": "My Music Library",
+      "description": "Access all your generated AI music tracks",
+      "keywords": ["library", "my songs", "music collection", "downloads"],
+      "features": ["play songs", "download tracks", "delete music", "view history"],
+      "relatedPages": ["/ai-music"],
+      "quickActions": ["Generate more music", "Download all", "Play latest"]
+    },
+    {
+      "route": "/greeting-cards",
+      "name": "AI Greeting Cards",
+      "description": "Create personalized AI-generated greeting cards for any occasion",
+      "keywords": ["greeting", "card", "generate", "occasion", "personalized"],
+      "features": ["select occasion", "customize message", "ai generation", "download"],
+      "relatedPages": ["/occasions"],
+      "quickActions": ["Create greeting card", "Choose occasion", "See examples"]
+    },
+    {
+      "route": "/occasions",
+      "name": "Special Occasions",
+      "description": "Browse celebrity occasions and send wishes",
+      "keywords": ["occasions", "birthday", "anniversary", "celebration", "event"],
+      "features": ["upcoming occasions", "send wishes", "book video messages"],
+      "relatedPages": ["/occasion-booking/:id"],
+      "quickActions": ["See upcoming occasions", "Send a wish", "Book video message"]
+    },
+    {
+      "route": "/profile",
+      "name": "My Profile",
+      "description": "Manage your account details, addresses, and payment methods",
+      "keywords": ["profile", "account", "settings", "personal info", "edit"],
+      "features": ["edit details", "manage addresses", "bank details", "wallet balance"],
+      "relatedPages": ["/wallet"],
+      "quickActions": ["Update profile", "Add address", "View wallet"]
+    },
+    {
+      "route": "/wallet",
+      "name": "Wallet",
+      "description": "Manage wallet balance, add funds, and view transactions",
+      "keywords": ["wallet", "balance", "money", "add funds", "transactions"],
+      "features": ["check balance", "add money", "transaction history", "withdraw"],
+      "relatedPages": ["/profile"],
+      "quickActions": ["Add funds", "View transactions", "Check balance"]
+    },
+    {
+      "route": "/following",
+      "name": "Following",
+      "description": "View and manage your favorite celebrities with exclusive access",
+      "keywords": ["favorites", "following", "subscribed", "premium"],
+      "features": ["view favorites", "subscribe to celebrities", "exclusive content"],
+      "relatedPages": ["/celebrities"],
+      "quickActions": ["Add favorite", "View subscriptions", "Manage following"]
+    },
+    {
+      "route": "/messages",
+      "name": "Messages",
+      "description": "Chat with celebrities you've booked",
+      "keywords": ["messages", "chat", "conversation", "talk"],
+      "features": ["send messages", "view conversations", "real-time chat"],
+      "relatedPages": ["/bookings"],
+      "quickActions": ["Start conversation", "View messages", "Reply"]
+    },
+    {
+      "route": "/celebrity-signup",
+      "name": "Become a Celebrity",
+      "description": "Register as a celebrity and start earning",
+      "keywords": ["signup", "register", "join", "celebrity account", "earn"],
+      "features": ["registration form", "upload content", "set pricing", "verification"],
+      "relatedPages": ["/celebrity-dashboard"],
+      "quickActions": ["Complete signup", "Upload verification", "Set services"]
+    },
+    {
+      "route": "/celebrity-dashboard",
+      "name": "Celebrity Dashboard",
+      "description": "Manage your celebrity profile, bookings, and earnings",
+      "keywords": ["dashboard", "manage", "earnings", "bookings", "celebrity panel"],
+      "features": ["view bookings", "manage content", "check earnings", "settings"],
+      "relatedPages": ["/celebrity-profile", "/messages"],
+      "quickActions": ["View bookings", "Check earnings", "Update profile"]
+    },
+    {
+      "route": "/admin",
+      "name": "Admin Panel",
+      "description": "Manage platform users, celebrities, bookings, and settings",
+      "keywords": ["admin", "manage", "dashboard", "control panel"],
+      "features": ["manage users", "approve celebrities", "view analytics", "settings"],
+      "relatedPages": ["/admin/celebrities", "/admin/bookings", "/admin/users"],
+      "quickActions": ["Manage users", "View analytics", "Platform settings"]
+    },
+    {
+      "route": "/how-it-works",
+      "name": "How It Works",
+      "description": "Learn about the platform features and how to use them",
+      "keywords": ["help", "guide", "how to", "tutorial", "learn"],
+      "features": ["platform overview", "step-by-step guides", "faq"],
+      "relatedPages": ["/", "/celebrities"],
+      "quickActions": ["Browse celebrities", "Sign up", "Contact support"]
+    }
+  ]
+}

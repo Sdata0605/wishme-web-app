@@ -1,0 +1,70 @@
+project_id = "eqikeuqwbphwongtfzhe"
+
+[functions.process-video-order]
+verify_jwt = false
+
+[functions.poll-heygen-status]
+verify_jwt = false
+
+[functions.heygen-get-avatars]
+verify_jwt = false
+
+[functions.heygen-get-voices]
+verify_jwt = false
+
+[functions.fix-booking-video]
+verify_jwt = false
+
+[functions.generate-ugc-ad]
+verify_jwt = false
+
+[functions.insert-sample-celebrity]
+verify_jwt = false
+
+[functions.send-email-otp]
+verify_jwt = false
+
+[functions.verify-email-otp]
+verify_jwt = false
+
+[functions.send-bulk-newsletter]
+verify_jwt = false
+
+[functions.test-api-connections]
+verify_jwt = false
+
+[functions.manage-api-keys]
+verify_jwt = false
+
+[functions.send-celebrity-subscription-email]
+verify_jwt = false
+
+[functions.upload-ugc-video]
+verify_jwt = false
+
+[functions.vapi-webhook]
+verify_jwt = false
+
+[functions.get-featured-celebrities]
+verify_jwt = false
+
+[functions.process-scheduled-calls]
+verify_jwt = false
+
+[functions.verify-video-access]
+verify_jwt = false
+
+[functions.heygen-webhook]
+verify_jwt = false
+
+[functions.poll-heygen-status-batch]
+verify_jwt = false
+
+[functions.celebrity-conversation-auto-reply]
+verify_jwt = false
+
+[functions.celebrity-ai-message]
+verify_jwt = false
+
+[functions.send-wishme-notification]
+verify_jwt = false

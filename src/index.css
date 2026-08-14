@@ -1,0 +1,561 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Wish Me App Design System - Premium Dark Theme */
+
+@layer base {
+  :root {
+    /* Famous.ai Inspired Light Theme */
+    --background: 0 0% 100%;
+    --background-secondary: 220 18% 97%;
+    --foreground: 220 20% 10%;
+
+    /* Card System */
+    --card: 0 0% 100%;
+    --card-secondary: 220 18% 97%;
+    --card-foreground: 220 20% 10%;
+
+    /* Popover System */
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 10%;
+
+    /* Orange Primary (Famous.ai gradient start) */
+    --primary: 16 100% 60%;
+    --primary-dark: 16 100% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Pink/Purple Secondary */
+    --secondary: 280 90% 65%;
+    --secondary-dark: 280 90% 55%;
+    --secondary-foreground: 0 0% 100%;
+
+    /* Muted System */
+    --muted: 220 18% 94%;
+    --muted-foreground: 220 10% 46%;
+
+    /* Purple Accent */
+    --accent: 280 90% 65%;
+    --accent-foreground: 0 0% 100%;
+
+    /* Destructive */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Borders & Inputs */
+    --border: 220 18% 88%;
+    --input: 220 18% 92%;
+    --ring: 16 100% 60%;
+
+    /* Famous.ai Gradients - Orange to Pink to Purple */
+    --gradient-primary: linear-gradient(90deg, hsl(16 100% 60%) 0%, hsl(340 85% 65%) 50%, hsl(280 90% 65%) 100%);
+    --gradient-hero: linear-gradient(135deg, hsl(220 25% 96%) 0%, hsl(280 90% 98%) 50%, hsl(16 100% 98%) 100%);
+    --gradient-card: linear-gradient(145deg, hsl(0 0% 100%), hsl(220 18% 98%));
+
+    /* Shadows */
+    --shadow-premium: 0 25px 50px -12px hsl(280 90% 65% / 0.25);
+    --shadow-card: 0 10px 30px -10px hsl(220 20% 10% / 0.1);
+    --shadow-glow: 0 0 40px hsl(280 90% 65% / 0.15);
+
+    /* Messaging */
+    --message-shell: 225 31% 7%;
+    --message-sidebar: 223 30% 9%;
+    --message-panel: 224 35% 13%;
+    --message-bubble: 223 33% 17%;
+    --message-bubble-ai: 258 40% 15%;
+    --message-success: 142 71% 45%;
+    --message-warning: 38 92% 55%;
+    --message-read: 207 90% 61%;
+    --gradient-message-sent: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(334 84% 60%) 55%, hsl(var(--secondary)) 100%);
+    --gradient-message-heading: linear-gradient(90deg, hsl(var(--primary)) 0%, hsl(334 84% 60%) 100%);
+
+    --radius: 0.75rem;
+  }
+
+  /* Dark Theme - Famous.ai Style */
+  .dark {
+    /* Deep Navy Background (Famous.ai exact match - #1e283e) */
+    --background: 220 35% 18%;
+    --background-secondary: 220 35% 22%;
+    --foreground: 220 15% 95%;
+
+    /* Card System with subtle navy tones */
+    --card: 222 28% 14%;
+    --card-secondary: 222 26% 17%;
+    --card-foreground: 220 15% 95%;
+
+    /* Popover System */
+    --popover: 222 28% 14%;
+    --popover-foreground: 220 15% 95%;
+
+    /* Orange Primary (Famous.ai gradient) */
+    --primary: 16 100% 65%;
+    --primary-dark: 16 100% 55%;
+    --primary-foreground: 220 25% 12%;
+
+    /* Pink/Purple Secondary */
+    --secondary: 280 90% 70%;
+    --secondary-dark: 280 90% 60%;
+    --secondary-foreground: 220 15% 95%;
+
+    /* Muted System */
+    --muted: 222 26% 18%;
+    --muted-foreground: 220 10% 60%;
+
+    /* Purple Accent */
+    --accent: 280 90% 70%;
+    --accent-foreground: 220 25% 12%;
+
+    /* Destructive */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 220 15% 95%;
+
+    /* Borders & Inputs */
+    --border: 222 26% 20%;
+    --input: 222 28% 14%;
+    --ring: 16 100% 65%;
+
+    /* Famous.ai Dark Gradients - Orange to Pink to Purple with deep navy */
+    --gradient-primary: linear-gradient(90deg, hsl(16 100% 65%) 0%, hsl(340 85% 68%) 50%, hsl(280 90% 70%) 100%);
+    --gradient-hero: linear-gradient(135deg, hsl(222 30% 10%) 0%, hsl(280 50% 15%) 30%, hsl(222 30% 12%) 70%, hsl(280 40% 14%) 100%);
+    --gradient-card: linear-gradient(145deg, hsl(222 28% 14%), hsl(222 26% 17%));
+
+    /* Shadows with vibrant glow */
+    --shadow-premium: 0 25px 50px -12px hsl(280 90% 70% / 0.3);
+    --shadow-card: 0 10px 30px -10px hsl(0 0% 0% / 0.5);
+    --shadow-glow: 0 0 40px hsl(280 90% 70% / 0.25);
+
+    /* Messaging */
+    --message-shell: 225 31% 7%;
+    --message-sidebar: 223 30% 9%;
+    --message-panel: 224 35% 13%;
+    --message-bubble: 223 33% 17%;
+    --message-bubble-ai: 258 40% 15%;
+    --message-success: 142 71% 45%;
+    --message-warning: 38 92% 55%;
+    --message-read: 207 90% 61%;
+    --gradient-message-sent: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(334 84% 60%) 55%, hsl(var(--secondary)) 100%);
+    --gradient-message-heading: linear-gradient(90deg, hsl(var(--primary)) 0%, hsl(334 84% 60%) 100%);
+  }
+
+  :root {
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 220 20% 25%;
+    --sidebar-primary: 16 100% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 18% 96%;
+    --sidebar-accent-foreground: 220 20% 15%;
+    --sidebar-border: 220 18% 92%;
+    --sidebar-ring: 16 100% 60%;
+    --sidebar-header-bg: 220 18% 98%;
+  }
+
+  .dark {
+    --sidebar-background: 222 30% 12%;
+    --sidebar-foreground: 220 15% 90%;
+    --sidebar-primary: 16 100% 65%;
+    --sidebar-primary-foreground: 222 30% 10%;
+    --sidebar-accent: 222 28% 18%;
+    --sidebar-accent-foreground: 220 15% 95%;
+    --sidebar-border: 222 26% 18%;
+    --sidebar-ring: 16 100% 65%;
+    --sidebar-header-bg: 222 28% 10%;
+  }
+
+  /* Legacy dark theme support - redirects to new dark theme */
+  .litter-theme {
+    /* Deep Navy Background (Famous.ai exact match - #1e283e) */
+    --background: 220 35% 18%;
+    --background-secondary: 220 35% 22%;
+    --foreground: 220 15% 95%;
+
+    /* Card System */
+    --card: 222 28% 14%;
+    --card-secondary: 222 26% 17%;
+    --card-foreground: 220 15% 95%;
+
+    /* Popover System */
+    --popover: 222 28% 14%;
+    --popover-foreground: 220 15% 95%;
+
+    /* Orange Primary */
+    --primary: 16 100% 65%;
+    --primary-dark: 16 100% 55%;
+    --primary-foreground: 220 25% 12%;
+
+    /* Pink/Purple Secondary */
+    --secondary: 280 90% 70%;
+    --secondary-dark: 280 90% 60%;
+    --secondary-foreground: 220 15% 95%;
+
+    /* Muted System */
+    --muted: 222 26% 18%;
+    --muted-foreground: 220 10% 60%;
+
+    /* Purple Accent */
+    --accent: 280 90% 70%;
+    --accent-foreground: 220 25% 12%;
+
+    /* Destructive */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 220 15% 95%;
+
+    /* Borders & Inputs */
+    --border: 222 26% 20%;
+    --input: 222 28% 14%;
+    --ring: 16 100% 65%;
+
+    --sidebar-background: 222 30% 10%;
+    --sidebar-foreground: 220 15% 95%;
+    --sidebar-primary: 16 100% 65%;
+    --sidebar-primary-foreground: 222 30% 10%;
+    --sidebar-accent: 222 26% 18%;
+    --sidebar-accent-foreground: 220 15% 95%;
+    --sidebar-border: 222 26% 20%;
+    --sidebar-ring: 16 100% 65%;
+    --sidebar-header-bg: 222 28% 8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+  
+  .font-playfair {
+    font-family: 'Playfair Display', serif;
+  }
+  
+  .font-dancing {
+    font-family: 'Dancing Script', cursive;
+  }
+}
+
+/* Mobile App-like Styling */
+@layer utilities {
+  .mobile-app-container {
+    @apply px-4 py-6;
+  }
+
+  .mobile-card {
+    @apply rounded-2xl shadow-card bg-card border-0;
+  }
+
+  .mobile-grid {
+    @apply grid grid-cols-1 gap-4;
+  }
+
+  @screen md {
+    .mobile-grid {
+      @apply grid-cols-2 gap-6;
+    }
+  }
+
+  @screen lg {
+    .mobile-grid {
+      @apply grid-cols-3 gap-8;
+    }
+  }
+
+  /* Line clamp utilities */
+  .line-clamp-1 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+  }
+
+  .line-clamp-2 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  /* Mobile bottom safe area */
+  .mobile-safe-bottom {
+    @apply pb-20;
+  }
+
+  @screen md {
+    .mobile-safe-bottom {
+      @apply pb-8;
+    }
+  }
+
+  /* Mobile top safe area for fixed header */
+  .mobile-safe-top {
+    @apply pt-14;
+  }
+
+  @screen md {
+    .mobile-safe-top {
+      @apply pt-0;
+    }
+  }
+
+  /* Additional mobile app utilities */
+  .mobile-container {
+    @apply px-3 md:px-6 lg:px-8;
+  }
+  
+  .mobile-section {
+    @apply py-8 md:py-12 lg:py-16;
+  }
+  
+  .mobile-header {
+    @apply text-xl md:text-2xl lg:text-3xl;
+  }
+  
+  .mobile-text {
+    @apply text-sm md:text-base;
+  }
+  
+  .bg-gradient-primary {
+    background: var(--gradient-primary);
+  }
+  
+  .bg-gradient-hero {
+    background: var(--gradient-hero);
+  }
+  
+  .bg-gradient-card {
+    background: var(--gradient-card);
+  }
+  
+  .shadow-premium {
+    box-shadow: var(--shadow-premium);
+  }
+  
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+
+  /* Accessibility: disable gradient text overlay everywhere */
+  .bg-gradient-primary.bg-clip-text.text-transparent {
+    background: none !important;
+    -webkit-text-fill-color: hsl(var(--foreground));
+    color: hsl(var(--foreground));
+  }
+
+  /* Scrollbar utilities */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .scroll-touch { -webkit-overflow-scrolling: touch; }
+
+  /* Enhanced Loader Animations */
+  @keyframes gradient-x {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+  
+  @keyframes float {
+    0%, 100% { transform: translateY(0px) rotate(0deg); }
+    50% { transform: translateY(-20px) rotate(180deg); }
+  }
+  
+  @keyframes bounce-slow {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+  
+  @keyframes pulse-slow {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+  
+  @keyframes spin-slow {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  
+  @keyframes draw {
+    from { stroke-dasharray: 400; stroke-dashoffset: 400; }
+    to { stroke-dasharray: 400; stroke-dashoffset: 0; }
+  }
+  
+  @keyframes progress {
+    0% { width: 0%; }
+    100% { width: 100%; }
+  }
+
+  .animate-gradient-x { 
+    background-size: 400% 400%;
+    animation: gradient-x 3s ease infinite; 
+  }
+  
+  .animate-float { 
+    animation: float 3s ease-in-out infinite; 
+  }
+  
+  .animate-bounce-slow { 
+    animation: bounce-slow 2s ease-in-out infinite; 
+  }
+  
+  .animate-pulse-slow { 
+    animation: pulse-slow 2s ease-in-out infinite; 
+  }
+  
+  .animate-spin-slow { 
+    animation: spin-slow 8s linear infinite; 
+  }
+  
+  .animate-draw { 
+    stroke-dasharray: 400;
+    stroke-dashoffset: 400;
+    animation: draw 2s ease-in-out forwards; 
+  }
+  
+  .animate-progress { 
+    animation: progress 3s ease-in-out forwards; 
+  }
+}
+
+@keyframes ctaGlow {
+  0%, 100% { box-shadow: 0 0 20px hsl(16 100% 60% / 0.35); background-position: 0% center; }
+  50% { box-shadow: 0 0 30px hsl(16 100% 60% / 0.55); background-position: 100% center; }
+}
+
+/* ===== Mobile Responsiveness Foundation ===== */
+
+/* Prevent ALL horizontal overflow */
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+/* Prevent flex children from overflowing */
+@media (max-width: 640px) {
+  * {
+    min-width: 0;
+  }
+}
+
+/* Hide scrollbars on scroll containers */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Touch-friendly minimum tap size */
+.tap-target {
+  min-height: 44px;
+  min-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Horizontal scroll container */
+.scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  padding-bottom: 4px;
+}
+.scroll-x::-webkit-scrollbar {
+  display: none;
+}
+
+/* Mobile card row (table-to-card pattern) */
+@media (max-width: 640px) {
+  .mobile-card-row {
+    display: block;
+    border: 1px solid hsl(var(--border));
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+
+  /* Fix all Radix dialogs on mobile */
+  [data-radix-dialog-content] {
+    width: calc(100vw - 32px) !important;
+    max-width: calc(100vw - 32px) !important;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+}
+
+/* Waveform breathing animation for music studio */
+@keyframes waveform-breathe {
+  0% { transform: scaleY(0.6); }
+  100% { transform: scaleY(1); }
+}
+
+/* ===== Admin Dashboard Mobile Responsiveness ===== */
+@media (max-width: 768px) {
+  /* All admin dialogs/popups */
+  .admin-layout [data-radix-dialog-content] {
+    width: calc(100vw - 32px) !important;
+    max-width: calc(100vw - 32px) !important;
+    margin: 16px !important;
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+
+  /* Tables hidden on mobile */
+  .admin-table-wrapper {
+    display: none !important;
+  }
+
+  /* Cards shown on mobile */
+  .admin-card-list {
+    display: block !important;
+  }
+
+  /* Tab bars scroll */
+  .admin-tab-bar,
+  [role="tablist"] {
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .admin-tab-bar::-webkit-scrollbar,
+  [role="tablist"]::-webkit-scrollbar {
+    display: none;
+  }
+  [role="tablist"] > * {
+    flex-shrink: 0 !important;
+  }
+
+  /* Admin headings responsive */
+  .space-y-6 > div > h1,
+  .space-y-8 > div > h1 {
+    font-size: 1.25rem !important;
+    line-height: 1.75rem !important;
+  }
+
+  /* Stat grids */
+  .admin-stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Full width buttons on mobile */
+  .admin-action-buttons {
+    flex-direction: column;
+  }
+  .admin-action-buttons button {
+    width: 100%;
+  }
+}
+
+@media (min-width: 769px) {
+  .admin-table-wrapper {
+    display: block;
+  }
+  .admin-card-list {
+    display: none !important;
+  }
+}

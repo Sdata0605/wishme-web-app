@@ -1,0 +1,192 @@
+{
+  "common_issues": [
+    {
+      "issue": "Payment Failed",
+      "symptoms": ["Payment not going through", "Transaction error", "Money deducted but booking not confirmed"],
+      "solutions": [
+        "Check your internet connection",
+        "Verify card/bank details are correct",
+        "Try a different payment method",
+        "Use wallet payment for instant processing",
+        "Contact support if money was deducted"
+      ],
+      "keywords": ["payment", "failed", "transaction", "error"]
+    },
+    {
+      "issue": "Cannot Add Funds to Wallet",
+      "symptoms": ["Wallet recharge failing", "Add funds not working"],
+      "solutions": [
+        "Navigate to Wallet page",
+        "Click 'Add Funds' button",
+        "Enter amount (minimum ₹100)",
+        "Complete payment through Razorpay",
+        "Check wallet balance after payment"
+      ],
+      "keywords": ["wallet", "add money", "recharge", "funds"]
+    },
+    {
+      "issue": "Celebrity Not Responding",
+      "symptoms": ["Booking pending for long time", "No update from celebrity"],
+      "solutions": [
+        "Check booking status in /bookings",
+        "Celebrity has up to stated delivery time",
+        "Send message to celebrity through platform",
+        "Contact support if past delivery date",
+        "Request cancellation if needed"
+      ],
+      "keywords": ["celebrity", "not responding", "pending", "delay"]
+    },
+    {
+      "issue": "Video Quality Issues",
+      "symptoms": ["Video won't play", "Poor quality", "Download not working"],
+      "solutions": [
+        "Check your internet connection",
+        "Try different browser",
+        "Clear browser cache",
+        "Download video instead of streaming",
+        "Contact support for video re-delivery"
+      ],
+      "keywords": ["video", "quality", "play", "download"]
+    },
+    {
+      "issue": "Account Login Problems",
+      "symptoms": ["Can't login", "Password not working", "Account locked"],
+      "solutions": [
+        "Use 'Forgot Password' to reset",
+        "Check email for verification link",
+        "Verify phone number is correct",
+        "Clear browser cookies",
+        "Try social login (Google)"
+      ],
+      "keywords": ["login", "password", "account", "access"]
+    },
+    {
+      "issue": "Referral Code Not Working",
+      "symptoms": ["Referral bonus not applied", "Code invalid"],
+      "solutions": [
+        "Check code spelling carefully",
+        "Ensure code hasn't expired",
+        "Verify you're a new user (if required)",
+        "Apply code before payment",
+        "Contact referrer for correct code"
+      ],
+      "keywords": ["referral", "code", "bonus", "discount"]
+    },
+    {
+      "issue": "Cannot Generate AI Music",
+      "symptoms": ["Music generation failing", "No credits", "Generation stuck"],
+      "solutions": [
+        "Check your music generation credits",
+        "Free users get 3 generations/month",
+        "Upgrade plan for unlimited generations",
+        "Wait for generation to complete (takes 2-3 minutes)",
+        "Try different genre/mood combination"
+      ],
+      "keywords": ["music", "generate", "ai music", "credits"]
+    },
+    {
+      "issue": "Profile Update Not Saving",
+      "symptoms": ["Changes not saved", "Profile reverting"],
+      "solutions": [
+        "Fill all required fields",
+        "Check image file size (max 5MB)",
+        "Verify phone number format",
+        "Click 'Save Changes' button",
+        "Refresh page to verify update"
+      ],
+      "keywords": ["profile", "update", "save", "change"]
+    }
+  ],
+  "feature_guides": [
+    {
+      "feature": "AI Music Studio",
+      "description": "Generate custom songs using AI",
+      "how_to_use": [
+        "Navigate to AI Music Studio",
+        "Enter song title and description",
+        "Select genre and mood",
+        "Choose generation type (with/without lyrics)",
+        "Click Generate Song",
+        "Wait 2-3 minutes for completion",
+        "Download or share your song"
+      ],
+      "tips": ["Be specific in description", "Free users get 3 free generations/month", "Premium users get unlimited generations"],
+      "keywords": ["music", "ai", "song", "generate"]
+    },
+    {
+      "feature": "Greeting Cards",
+      "description": "Create AI-generated personalized greeting cards",
+      "how_to_use": [
+        "Go to Greeting Cards page",
+        "Select occasion or enter custom",
+        "Add recipient name",
+        "Write greeting text",
+        "Optionally upload reference image",
+        "Generate card (costs 2 credits)",
+        "Download or share card"
+      ],
+      "keywords": ["greeting", "card", "occasion", "ai"]
+    },
+    {
+      "feature": "Following Celebrities",
+      "description": "Keep track of your favorite celebrities",
+      "how_to_use": [
+        "Browse celebrities",
+        "Click heart icon to add to favorites",
+        "Access favorites from /following",
+        "Get notifications about celebrity updates",
+        "Quick book from favorites list"
+      ],
+      "keywords": ["follow", "favorite", "celebrity", "subscribe"]
+    },
+    {
+      "feature": "Messages",
+      "description": "Chat with celebrities you've booked",
+      "how_to_use": [
+        "Navigate to Messages page",
+        "Select conversation",
+        "Send messages to celebrity",
+        "Get responses and updates",
+        "Attach files if needed"
+      ],
+      "keywords": ["message", "chat", "conversation", "talk"]
+    }
+  ],
+  "account_management": [
+    {
+      "topic": "Profile Completion",
+      "description": "Complete your profile for better experience",
+      "steps": [
+        "Add profile photo",
+        "Update name and phone number",
+        "Add address for physical deliveries",
+        "Set communication preferences",
+        "Link social accounts"
+      ],
+      "benefits": ["Faster checkout", "Better recommendations", "Priority support"]
+    },
+    {
+      "topic": "Wallet Management",
+      "description": "Manage your wallet for quick payments",
+      "features": [
+        "Add funds instantly",
+        "Track all transactions",
+        "Request withdrawals",
+        "View commission earnings",
+        "Check referral bonuses"
+      ]
+    },
+    {
+      "topic": "Referral Program",
+      "description": "Earn by referring friends",
+      "how_it_works": [
+        "Get your unique referral code from /referrals",
+        "Share code with friends",
+        "They sign up using your code",
+        "You earn commission on their bookings",
+        "Track referrals and earnings"
+      ],
+      "commission_structure": "Earn percentage on Level 1 and Level 2 referrals"
+    }
+  ]
+}

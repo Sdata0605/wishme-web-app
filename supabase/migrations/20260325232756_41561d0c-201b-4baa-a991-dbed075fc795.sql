@@ -1,0 +1,2 @@
+INSERT INTO wallet_transactions (user_id, transaction_type, amount, status, description, admin_note)
+VALUES ('72d6715c-7316-425a-81ee-3ac8b4b85c06', 'admin_credit', 1000, 'completed', 'Test credit of ₹1000 for testing', 'Added by admin for testing purposes')

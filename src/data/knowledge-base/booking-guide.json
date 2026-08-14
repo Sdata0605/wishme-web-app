@@ -1,0 +1,83 @@
+{
+  "booking_process": {
+    "steps": [
+      {
+        "step": 1,
+        "title": "Browse Celebrities",
+        "description": "Search and filter celebrities by category, price, or popularity",
+        "action": "Navigate to /celebrities",
+        "tips": ["Use search to find specific celebrities", "Filter by category for targeted results"]
+      },
+      {
+        "step": 2,
+        "title": "Select Celebrity & Service",
+        "description": "Choose your favorite celebrity and select the service type you need",
+        "tips": ["Check celebrity ratings and reviews", "Compare service prices", "Review delivery timeline"]
+      },
+      {
+        "step": 3,
+        "title": "Fill Booking Details",
+        "description": "Provide recipient information and special instructions",
+        "tips": ["Be specific with instructions", "Include occasion details", "Mention any special requests"]
+      },
+      {
+        "step": 4,
+        "title": "Review & Pay",
+        "description": "Review your booking details and complete payment",
+        "payment_methods": ["Credit/Debit Card", "UPI", "Net Banking", "Wallet Balance"],
+        "tips": ["Double-check all details", "Use wallet for instant payment", "Apply referral codes for discounts"]
+      },
+      {
+        "step": 5,
+        "title": "Track Booking",
+        "description": "Monitor your booking status in the Bookings section",
+        "action": "Navigate to /bookings",
+        "status_types": ["Pending", "In Progress", "Completed", "Delivered"]
+      }
+    ]
+  },
+  "payment_info": {
+    "methods": [
+      {
+        "name": "Wallet",
+        "description": "Use your wallet balance for instant payments",
+        "benefits": ["No transaction fees", "Instant processing", "Easy refunds"],
+        "how_to_add": "Go to Wallet > Add Funds > Enter Amount > Complete Payment"
+      },
+      {
+        "name": "UPI",
+        "description": "Pay directly using UPI apps like GPay, PhonePe, Paytm",
+        "benefits": ["Quick payment", "Secure", "No additional charges"]
+      },
+      {
+        "name": "Cards",
+        "description": "Credit and Debit cards accepted",
+        "benefits": ["Widely accepted", "Secure transactions", "EMI options available"]
+      },
+      {
+        "name": "Net Banking",
+        "description": "Direct bank transfer",
+        "benefits": ["Bank-level security", "All major banks supported"]
+      }
+    ],
+    "security": "All payments are processed through secure payment gateway Razorpay"
+  },
+  "delivery_timeline": {
+    "video_message": "3-7 business days",
+    "text_message": "1-2 business days",
+    "image_promotion": "5-10 business days",
+    "video_promotion": "7-14 business days",
+    "notes": [
+      "Timeline starts after payment confirmation",
+      "Celebrity may deliver earlier than promised",
+      "Delays may occur during peak seasons",
+      "You'll receive notifications at each status change"
+    ]
+  },
+  "cancellation_policy": {
+    "before_acceptance": "Full refund if cancelled before celebrity accepts",
+    "after_acceptance": "Partial refund based on progress",
+    "after_delivery": "No refund after content is delivered",
+    "how_to_cancel": "Go to Bookings > Select Booking > Request Cancellation"
+  }
+}

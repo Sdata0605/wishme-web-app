@@ -1,0 +1,16 @@
+# Wish Me - Celebrity Wishes Platform
+# Allow all search engines to crawl
+
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /celebrity-dashboard
+Disallow: /dashboard
+Disallow: /profile
+Disallow: /messages
+
+# Sitemap location
+Sitemap: https://wishmefinal.lovable.app/sitemap.xml
+
+# Crawl-delay for bots
+Crawl-delay: 1

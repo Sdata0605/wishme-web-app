@@ -1,0 +1,88 @@
+{
+  "features": [
+    {
+      "name": "Celebrity Booking",
+      "description": "Book personalized video messages, text messages, or promotional content from your favorite celebrities",
+      "howTo": "1. Browse or search for a celebrity\n2. Click on their profile\n3. Select the service type (video message, text, promotion)\n4. Fill the booking form with recipient details and your message\n5. Complete payment\n6. Wait for delivery (usually within 24-48 hours)",
+      "pricing": "Varies by celebrity and service type. General video messages start from ₹5000.",
+      "keywords": ["book", "booking", "order", "request", "celebrity service"]
+    },
+    {
+      "name": "AI Music Generation",
+      "description": "Create custom songs with AI-generated lyrics and music in various genres",
+      "howTo": "1. Go to AI Music Studio\n2. Enter your song title and prompt\n3. Choose genre and mood\n4. Click generate\n5. Wait for AI to create your song\n6. Download or save to library",
+      "pricing": "Free users get 3 generations per month. Paid plans get unlimited.",
+      "keywords": ["music", "song", "generate", "ai", "lyrics", "melody"]
+    },
+    {
+      "name": "AI Greeting Cards",
+      "description": "Generate personalized greeting cards using AI for any occasion",
+      "howTo": "1. Visit Greeting Cards page\n2. Select or enter an occasion\n3. Enter recipient name and custom prompt\n4. Optionally upload reference image\n5. Generate card\n6. Download or share",
+      "pricing": "₹2 per card generation. Deducted from wallet balance.",
+      "keywords": ["greeting", "card", "occasion", "personalized", "ai generated"]
+    },
+    {
+      "name": "Celebrity Occasions",
+      "description": "Send wishes on celebrity birthdays, anniversaries and special occasions",
+      "howTo": "1. Go to Occasions page\n2. View upcoming celebrity occasions\n3. Click to send a wish or book a video message\n4. Fill the form and submit",
+      "pricing": "Free to send wishes. Video bookings have separate pricing.",
+      "keywords": ["occasion", "birthday", "anniversary", "wish", "celebration"]
+    },
+    {
+      "name": "Wallet System",
+      "description": "Manage your digital wallet for quick payments and withdrawals",
+      "howTo": "To add funds:\n1. Go to Wallet page\n2. Click 'Add Funds'\n3. Enter amount\n4. Complete payment via Razorpay\n\nTo withdraw:\n1. Add bank details in Profile\n2. Request withdrawal from Wallet\n3. Admin will process within 2-3 business days",
+      "pricing": "No fees for adding funds. Withdrawal may have processing fees.",
+      "keywords": ["wallet", "balance", "payment", "funds", "money"]
+    },
+    {
+      "name": "Following System",
+      "description": "Subscribe to your favorite celebrities for exclusive content and priority booking",
+      "howTo": "1. Go to celebrity profile\n2. Click 'Add to Favorites'\n3. Complete subscription payment\n4. Get access to exclusive content and benefits",
+      "pricing": "₹999 per celebrity subscription. Includes referral commissions.",
+      "keywords": ["favorite", "following", "subscribe", "premium", "exclusive"]
+    },
+    {
+      "name": "Messaging",
+      "description": "Direct chat with celebrities after booking their services",
+      "howTo": "1. Complete a booking with a celebrity\n2. Go to Messages page\n3. Select the conversation\n4. Send and receive messages\n5. Celebrity may use AI to generate replies",
+      "pricing": "Free for users who have active bookings.",
+      "keywords": ["message", "chat", "conversation", "talk", "communicate"]
+    },
+    {
+      "name": "Referral Program",
+      "description": "Earn commissions by referring users or celebrities to the platform",
+      "howTo": "1. Get your referral code from Profile\n2. Share with friends\n3. When they sign up and make bookings, you earn commission\n4. Level 1 referrals: 5-10%\n5. Level 2 referrals: 2-5%",
+      "pricing": "Free to participate. Earnings deposited to wallet.",
+      "keywords": ["referral", "refer", "earn", "commission", "invite"]
+    },
+    {
+      "name": "Celebrity Registration",
+      "description": "Join as a celebrity to offer your services and earn money",
+      "howTo": "1. Click 'Become a Celebrity'\n2. Fill registration form\n3. Upload verification documents\n4. Set your service prices\n5. Upload consent video/photo\n6. Wait for admin approval\n7. Start receiving bookings",
+      "pricing": "Free to join. Platform takes 30% commission. TDS deducted based on PAN status.",
+      "keywords": ["signup", "register", "join", "celebrity", "earn", "become"]
+    },
+    {
+      "name": "Image Promotions",
+      "description": "Get AI-generated promotional images featuring celebrities",
+      "howTo": "1. Go to Image Promotions\n2. Select celebrity\n3. Enter brand/product concept\n4. Provide branding details\n5. Generate promotional image\n6. Download for use",
+      "pricing": "₹25,000 per image generation.",
+      "keywords": ["promotion", "advertising", "brand", "image", "commercial"]
+    },
+    {
+      "name": "UGC Videos",
+      "description": "Generate User Generated Content style videos with celebrity AI avatars",
+      "howTo": "1. Visit UGC Videos page\n2. Select celebrity\n3. Enter video concept\n4. Generate video with AI avatar\n5. Download for social media",
+      "pricing": "₹50,000 per video generation.",
+      "keywords": ["ugc", "video", "content", "avatar", "ai video"]
+    },
+    {
+      "name": "Reviews & Ratings",
+      "description": "Rate and review celebrities after booking completion",
+      "howTo": "1. Complete a booking\n2. Go to Bookings page\n3. Click on completed booking\n4. Rate (1-5 stars) and write review\n5. Submit",
+      "pricing": "Free to review.",
+      "keywords": ["review", "rating", "feedback", "rate", "experience"]
+    }
+  ]
+}

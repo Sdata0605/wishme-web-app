@@ -1,0 +1,279 @@
+{
+  "forms": [
+    {
+      "page": "/book/:celebrityId/:serviceType",
+      "formName": "Booking Form",
+      "description": "Form to book a celebrity service",
+      "fields": {
+        "recipient_name": {
+          "type": "text",
+          "label": "Recipient Name",
+          "description": "Name of the person who will receive the message",
+          "required": true,
+          "example": "John Doe"
+        },
+        "message": {
+          "type": "textarea",
+          "label": "Your Message",
+          "description": "The message you want the celebrity to include",
+          "required": true,
+          "example": "Happy birthday! Hope you have an amazing year ahead."
+        },
+        "instructions": {
+          "type": "textarea",
+          "label": "Special Instructions",
+          "description": "Any special requests or instructions for the celebrity",
+          "required": false,
+          "example": "Please mention their love for football"
+        }
+      }
+    },
+    {
+      "page": "/profile",
+      "formName": "Profile Update Form",
+      "description": "Update your personal information",
+      "fields": {
+        "first_name": {
+          "type": "text",
+          "label": "First Name",
+          "description": "Your first name",
+          "required": true
+        },
+        "last_name": {
+          "type": "text",
+          "label": "Last Name",
+          "description": "Your last name",
+          "required": true
+        },
+        "phone": {
+          "type": "tel",
+          "label": "Phone Number",
+          "description": "Your contact phone number",
+          "required": false,
+          "format": "+91XXXXXXXXXX"
+        },
+        "pan_number": {
+          "type": "text",
+          "label": "PAN Number",
+          "description": "Your PAN card number for tax purposes",
+          "required": false,
+          "format": "AAAAA9999A"
+        },
+        "aadhaar_number": {
+          "type": "text",
+          "label": "Aadhaar Number",
+          "description": "Your Aadhaar card number",
+          "required": false,
+          "format": "XXXX XXXX XXXX"
+        }
+      }
+    },
+    {
+      "page": "/profile/address",
+      "formName": "Address Form",
+      "description": "Add or update delivery address",
+      "fields": {
+        "address_line_1": {
+          "type": "text",
+          "label": "Address Line 1",
+          "description": "House/Flat number, Building name",
+          "required": true
+        },
+        "address_line_2": {
+          "type": "text",
+          "label": "Address Line 2",
+          "description": "Street, Locality",
+          "required": false
+        },
+        "city": {
+          "type": "text",
+          "label": "City",
+          "description": "City name",
+          "required": true
+        },
+        "state": {
+          "type": "select",
+          "label": "State",
+          "description": "Select your state",
+          "required": true
+        },
+        "pincode": {
+          "type": "text",
+          "label": "Pincode",
+          "description": "6-digit pincode",
+          "required": true,
+          "format": "XXXXXX"
+        },
+        "address_type": {
+          "type": "select",
+          "label": "Address Type",
+          "description": "Type of address",
+          "options": ["home", "work", "other"],
+          "required": false
+        }
+      }
+    },
+    {
+      "page": "/profile/bank-details",
+      "formName": "Bank Details Form",
+      "description": "Add bank account for withdrawals",
+      "fields": {
+        "bank_name": {
+          "type": "text",
+          "label": "Bank Name",
+          "description": "Name of your bank",
+          "required": true,
+          "example": "State Bank of India"
+        },
+        "account_holder_name": {
+          "type": "text",
+          "label": "Account Holder Name",
+          "description": "Name as per bank account",
+          "required": true
+        },
+        "account_number": {
+          "type": "text",
+          "label": "Account Number",
+          "description": "Your bank account number",
+          "required": true
+        },
+        "ifsc_code": {
+          "type": "text",
+          "label": "IFSC Code",
+          "description": "Bank IFSC code",
+          "required": true,
+          "format": "AAAA0XXXXXX"
+        },
+        "account_type": {
+          "type": "select",
+          "label": "Account Type",
+          "options": ["savings", "current"],
+          "required": true
+        }
+      }
+    },
+    {
+      "page": "/celebrity-signup",
+      "formName": "Celebrity Registration Form",
+      "description": "Register as a celebrity on the platform",
+      "fields": {
+        "name": {
+          "type": "text",
+          "label": "Celebrity Name",
+          "description": "Your public name",
+          "required": true
+        },
+        "category": {
+          "type": "select",
+          "label": "Category",
+          "description": "Your category (Actor, Singer, Sports, etc.)",
+          "required": true
+        },
+        "bio": {
+          "type": "textarea",
+          "label": "Biography",
+          "description": "Tell us about yourself",
+          "required": true
+        },
+        "followers": {
+          "type": "text",
+          "label": "Social Media Followers",
+          "description": "Total followers across platforms",
+          "required": false
+        },
+        "date_of_birth": {
+          "type": "date",
+          "label": "Date of Birth",
+          "description": "Your birthday",
+          "required": false
+        }
+      }
+    },
+    {
+      "page": "/ai-music",
+      "formName": "Music Generation Form",
+      "description": "Generate AI music",
+      "fields": {
+        "song_title": {
+          "type": "text",
+          "label": "Song Title",
+          "description": "Title for your song",
+          "required": true,
+          "example": "Summer Vibes"
+        },
+        "prompt": {
+          "type": "textarea",
+          "label": "Song Prompt",
+          "description": "Describe what you want the song to be about",
+          "required": true,
+          "example": "A happy summer song about beach and friends"
+        },
+        "genre": {
+          "type": "select",
+          "label": "Genre",
+          "description": "Music genre",
+          "options": ["pop", "rock", "hip-hop", "jazz", "classical", "electronic"],
+          "required": false
+        },
+        "mood": {
+          "type": "select",
+          "label": "Mood",
+          "description": "Overall mood",
+          "options": ["happy", "sad", "energetic", "calm", "romantic"],
+          "required": false
+        }
+      }
+    },
+    {
+      "page": "/greeting-cards",
+      "formName": "Greeting Card Form",
+      "description": "Generate AI greeting card",
+      "fields": {
+        "occasion_name": {
+          "type": "text",
+          "label": "Occasion",
+          "description": "Type of occasion",
+          "required": true,
+          "example": "Birthday"
+        },
+        "recipient_name": {
+          "type": "text",
+          "label": "Recipient Name",
+          "description": "Who is this card for",
+          "required": true,
+          "example": "Sarah"
+        },
+        "original_prompt": {
+          "type": "textarea",
+          "label": "Card Description",
+          "description": "Describe what you want on the card",
+          "required": true,
+          "example": "A colorful birthday card with balloons and cake"
+        }
+      }
+    },
+    {
+      "page": "/occasions/:id/book",
+      "formName": "Occasion Booking Form",
+      "description": "Book occasion video from celebrity",
+      "fields": {
+        "recipient_name": {
+          "type": "text",
+          "label": "Recipient Name",
+          "required": true
+        },
+        "recipient_email": {
+          "type": "email",
+          "label": "Recipient Email",
+          "required": false
+        },
+        "message": {
+          "type": "textarea",
+          "label": "Your Message",
+          "description": "Message for the celebrity to include",
+          "required": true
+        }
+      }
+    }
+  ]
+}

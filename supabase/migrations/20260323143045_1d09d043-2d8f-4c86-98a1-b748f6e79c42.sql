@@ -1,0 +1,1 @@
+ALTER TABLE voice_call_wishes ADD COLUMN IF NOT EXISTS call_config jsonb;
