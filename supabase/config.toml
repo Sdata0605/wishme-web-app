@@ -68,3 +68,29 @@ verify_jwt = false
 
 [functions.send-wishme-notification]
 verify_jwt = false
+
+[functions.tbo-flights]
+verify_jwt = false
+
+[functions.tbo-hotels]
+verify_jwt = false
+
+# Vapi calls this with a shared secret header (x-vapi-secret), not a Supabase login, so the gateway
+# must not demand a JWT. The function itself rejects anything without the right secret.
+[functions.ai-call-webhook]
+verify_jwt = false
+
+# The phone network calls this (ringing, answered, hung up, and the live audio stream) and cannot
+# log in, so the gateway must not demand a JWT. Every URL carries a token derived from the call id
+# and AI_CALL_WEBHOOK_SECRET, and the function rejects anything else.
+[functions.vobiz-call]
+verify_jwt = false
+
+
+# Woken by pg_cron, which sends the anon key rather than a user login.
+[functions.reminders-dispatch]
+verify_jwt = false
+
+# The nightly /expire tidy-up is woken by pg_cron with the anon key; playback still checks the login.
+[functions.ai-call-recording]
+verify_jwt = false

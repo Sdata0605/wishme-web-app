@@ -1,5 +1,5 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,7 +12,11 @@ serve(async (req) => {
   }
 
   try {
-    const { celebrityName, occasionType, recipientName, message } = await req.json();
+    const body = await req.json();
+    const celebrityName = body.celebrityName || body.celebrity_name;
+    const occasionType = body.occasionType || body.occasion;
+    const recipientName = body.recipientName || body.recipient_name;
+    const message = body.message;
 
     if (!celebrityName || !occasionType) {
       return new Response(
@@ -21,13 +25,18 @@ serve(async (req) => {
       );
     }
 
-    const LOVABLE_API_KEY = Deno.env.get('OPENROUTER_API_KEY') || Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY is not configured');
+    const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY');
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    const apiKey = OPENROUTER_API_KEY || LOVABLE_API_KEY;
+    if (!apiKey) {
+      throw new Error('OPENROUTER_API_KEY is not configured');
     }
 
-    // Create a detailed prompt for generating greeting card prompts
-    const systemPrompt = `You are a creative AI assistant that generates beautiful, visually descriptive prompts for greeting card images. 
+    const chatUrl = OPENROUTER_API_KEY
+      ? 'https://openrouter.ai/api/v1/chat/completions'
+      : 'https://ai.gateway.lovable.dev/v1/chat/completions';
+
+    const systemPrompt = `You are a creative AI assistant that generates beautiful, visually descriptive prompts for greeting card images.
 Your prompts should be:
 - Vivid and detailed visual descriptions
 - Appropriate for ${occasionType} occasions
@@ -38,16 +47,18 @@ Your prompts should be:
 
 Return ONLY a JSON array of 3 unique prompts as strings, nothing else.`;
 
-    const userPrompt = `Generate 3 creative, visually descriptive prompts for ${occasionType} greeting card images featuring ${celebrityName}${recipientName ? ` for ${recipientName}` : ''}${message ? `. Context: ${message.substring(0, 100)}` : ''}.`;
+    const userPrompt = `Generate 3 creative, visually descriptive prompts for ${occasionType} greeting card images featuring ${celebrityName}${recipientName ? ` for ${recipientName}` : ''}${message ? `. Context: ${String(message).substring(0, 100)}` : ''}.`;
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetch(chatUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://wishme.app',
+        'X-Title': 'Wish Me',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: 'openai/gpt-4o-mini',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
@@ -69,29 +80,28 @@ Return ONLY a JSON array of 3 unique prompts as strings, nothing else.`;
         );
       }
       const errorText = await response.text();
-      console.error('Lovable AI error:', response.status, errorText);
+      console.error('Prompt suggestion AI error:', response.status, errorText);
       throw new Error('Failed to generate prompts');
     }
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content || '';
 
-    // Try to parse JSON array from response
     let prompts: string[] = [];
     try {
-      // Try direct JSON parse
       const parsed = JSON.parse(content);
       if (Array.isArray(parsed)) {
-        prompts = parsed;
+        prompts = parsed.filter((item: unknown) => typeof item === 'string');
       }
     } catch {
-      // Fallback: extract JSON array from markdown or text
       const jsonMatch = content.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
         try {
-          prompts = JSON.parse(jsonMatch[0]);
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (Array.isArray(parsed)) {
+            prompts = parsed.filter((item: unknown) => typeof item === 'string');
+          }
         } catch {
-          // Last resort: split by newlines and clean up
           prompts = content
             .split('\n')
             .filter((line: string) => line.trim().length > 20)
@@ -102,7 +112,6 @@ Return ONLY a JSON array of 3 unique prompts as strings, nothing else.`;
       }
     }
 
-    // Ensure we have at least 1 prompt
     if (prompts.length === 0) {
       prompts = [
         `A beautiful ${occasionType} celebration scene featuring ${celebrityName}, with vibrant colors, festive decorations, and warm lighting creating a joyful atmosphere`,

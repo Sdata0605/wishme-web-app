@@ -30,10 +30,20 @@ serve(async (req) => {
     const { celebrityId, concept, brandingDetails, referenceImageUrl, referenceImageSource } = await req.json();
     console.log('Image promotion request:', { celebrityId, concept: concept?.substring(0, 50) });
 
-    const LOVABLE_API_KEY = Deno.env.get('OPENROUTER_API_KEY') || Deno.env.get('LOVABLE_API_KEY');
+    const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY');
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    if (!LOVABLE_API_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error('Missing env vars');
+    if ((!OPENROUTER_API_KEY && !LOVABLE_API_KEY) || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+      throw new Error('OPENROUTER_API_KEY is not configured');
+    }
+
+    const aiHeaders = {
+      'Authorization': `Bearer ${OPENROUTER_API_KEY || LOVABLE_API_KEY}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://wishme.app',
+      'X-Title': 'Wish Me',
+    };
 
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -67,35 +77,100 @@ serve(async (req) => {
     if (brandingDetails) imagePrompt += `\nBranding: ${brandingDetails}`;
     imagePrompt += `\nStyle: High-quality professional marketing image, vibrant colors, modern design.`;
 
-    const messages: any[] = [{ role: "user", content: imagePrompt }];
-    if (referenceImageUrl && referenceImageSource !== 'none') {
-      messages[0].content = [
-        { type: "text", text: imagePrompt },
-        { type: "image_url", image_url: { url: referenceImageUrl } }
-      ];
+    console.log('Generating image via OpenRouter Image API...');
+    let rawImageUrl: string | null = null;
+    const lastErrors: string[] = [];
+    const imageModels = ['google/gemini-2.5-flash-image', 'google/gemini-2.5-flash-image-preview'];
+    const hasReference = Boolean(referenceImageUrl && referenceImageSource !== 'none');
+
+    if (OPENROUTER_API_KEY) {
+      for (const model of imageModels) {
+        const imageBody: Record<string, unknown> = {
+          model,
+          prompt: imagePrompt,
+          aspect_ratio: '1:1',
+        };
+        if (hasReference) {
+          imageBody.input_references = [
+            { type: 'image_url', image_url: { url: referenceImageUrl } },
+          ];
+        }
+        const imageResponse = await fetch('https://openrouter.ai/api/v1/images', {
+          method: 'POST',
+          headers: aiHeaders,
+          body: JSON.stringify(imageBody),
+        });
+        if (!imageResponse.ok) {
+          const errorText = await imageResponse.text();
+          const msg = `Image API ${model} ${imageResponse.status}`;
+          console.error(msg, errorText.substring(0, 400));
+          lastErrors.push(msg);
+          continue;
+        }
+        const imageData = await imageResponse.json();
+        const item = imageData?.data?.[0];
+        if (typeof item?.url === 'string' && item.url) {
+          rawImageUrl = item.url;
+        } else if (typeof item?.b64_json === 'string' && item.b64_json) {
+          const media = typeof item.media_type === 'string' && item.media_type.startsWith('image/')
+            ? item.media_type
+            : 'image/png';
+          rawImageUrl = `data:${media};base64,${item.b64_json}`;
+        }
+        if (rawImageUrl) {
+          console.log('Image generated with Image API', model);
+          break;
+        }
+        lastErrors.push(`Image API ${model} returned no image`);
+      }
+
+      if (!rawImageUrl) {
+        console.log('Falling back to OpenRouter chat image models');
+        const imageMessages = hasReference
+          ? [{ role: 'user', content: [
+              { type: 'text', text: imagePrompt },
+              { type: 'image_url', image_url: { url: referenceImageUrl } },
+            ]}]
+          : [{ role: 'user', content: imagePrompt }];
+        for (const model of imageModels) {
+          const imageResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: aiHeaders,
+            body: JSON.stringify({ model, messages: imageMessages, modalities: ['image', 'text'] }),
+          });
+          if (!imageResponse.ok) {
+            const errorText = await imageResponse.text();
+            const msg = `Chat image ${model} ${imageResponse.status}`;
+            console.error(msg, errorText.substring(0, 400));
+            lastErrors.push(msg);
+            continue;
+          }
+          const imageData = await imageResponse.json();
+          const message = imageData?.choices?.[0]?.message;
+          const fromImages = message?.images?.[0]?.image_url?.url || message?.images?.[0]?.url;
+          if (typeof fromImages === 'string' && fromImages) {
+            rawImageUrl = fromImages;
+          }
+          if (rawImageUrl) {
+            console.log('Image generated with chat model', model);
+            break;
+          }
+          lastErrors.push(`Chat image ${model} returned no image`);
+        }
+      }
     }
-
-    const imageResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${LOVABLE_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'google/gemini-2.5-flash-image-preview', messages, modalities: ['image', 'text'] }),
-    });
-
-    if (!imageResponse.ok) {
-      const errorText = await imageResponse.text();
-      await supabase.from('image_promotions').update({ status: 'failed', error_message: errorText, completed_at: new Date().toISOString() }).eq('id', generation.id);
-      throw new Error(`Image generation failed: ${errorText.substring(0, 200)}`);
-    }
-
-    const imageData = await imageResponse.json();
-    const rawImageUrl = imageData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
 
     if (!rawImageUrl) {
-      await supabase.from('image_promotions').update({ status: 'failed', error_message: 'No image returned', completed_at: new Date().toISOString() }).eq('id', generation.id);
-      throw new Error('No image generated');
+      await supabase.from('image_promotions').update({
+        status: 'failed',
+        error_message: lastErrors.join('; ') || 'No image returned',
+        completed_at: new Date().toISOString(),
+      }).eq('id', generation.id);
+      throw new Error(lastErrors.length
+        ? `Image generation failed (${lastErrors.join('; ')})`
+        : 'No image generated');
     }
 
-    // Upload to storage if base64
     let finalImageUrl = rawImageUrl;
     if (rawImageUrl.startsWith('data:')) {
       const storageUrl = await uploadBase64ToStorage(supabase, rawImageUrl, profile.id, generation.id);
@@ -112,7 +187,7 @@ serve(async (req) => {
 
     console.log('Image promotion generated successfully');
 
-    return new Response(JSON.stringify({ 
+    return new Response(JSON.stringify({
       success: true,
       generation: { ...generation, generated_image_url: finalImageUrl, status: 'completed' }
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

@@ -1,150 +1,263 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-interface AIAssistantRequest {
-  query: string;
-  conversationHistory?: Array<{ role: string; content: string }>;
-  context?: {
-    currentRoute?: string;
-    userRole?: 'user' | 'celebrity' | 'admin';
-    userId?: string;
-    isVoiceInput?: boolean;
-    formContext?: {
-      formId: string;
-      fields: Record<string, any>;
-    };
-  };
+// ─── Model Fallback Chain ─────────────────────────────────────────────────────
+const MODEL_CHAIN = [
+  'google/gemini-2.5-flash',
+  'google/gemini-2.0-flash-001',
+  'anthropic/claude-3-5-haiku',
+  'openai/gpt-4o-mini',
+  'meta-llama/llama-3.1-8b-instruct',
+];
+
+// ─── Complete WishMe Intent Knowledge ─────────────────────────────────────────
+
+const INTENT_CATALOG = [
+  // Celebrity
+  { intent: 'celebrity_wish', name: 'Celebrity Video Wish', cat: 'Celebrity', phrases: ['book a celebrity wish', 'celebrity video', 'birthday video from celebrity', 'celebrity shoutout', 'personalised video', 'book celebrity for birthday'] },
+  { intent: 'voice_call_wish', name: 'Celebrity Voice Call Wish', cat: 'Celebrity', phrases: ['voice call with celebrity', 'celebrity phone call', 'live call', 'celebrity voice call', 'book voice call'] },
+  { intent: 'photo_wish', name: 'AI Photo Wish', cat: 'Celebrity', phrases: ['photo wish', 'create photo wish', 'birthday photo card', 'ai photo message', 'personalized photo'] },
+  { intent: 'wish_friend', name: 'Wish a Friend', cat: 'Celebrity', phrases: ['wish a friend', 'send wish to friend', 'gift a celebrity wish', 'send celebrity video to someone'] },
+  { intent: 'image_promotion', name: 'Celebrity Image Promotion', cat: 'Celebrity', phrases: ['image promotion', 'celebrity promo image', 'brand promotion with celebrity', 'promotional image', 'celebrity ad image'] },
+  { intent: 'greeting_card', name: 'AI Greeting Card', cat: 'Creative', phrases: ['greeting card', 'create a card', 'birthday card', 'anniversary card', 'make a greeting card', 'digital card'] },
+  // Travel
+  { intent: 'flight_booking', name: 'Flight Booking', cat: 'Travel', phrases: ['book a flight', 'flight to', 'fly to', 'search flights', 'book airplane ticket', 'flight ticket', 'book plane ticket'] },
+  { intent: 'hotel_booking', name: 'Hotel Booking', cat: 'Travel', phrases: ['book a hotel', 'hotel in', 'find hotel', 'hotel room', 'stay in', 'hotel booking'] },
+  { intent: 'bus_booking', name: 'Bus Ticket Booking', cat: 'Travel', phrases: ['book bus ticket', 'bus to', 'bus from', 'bus booking', 'bus ticket', 'book a bus', 'travel by bus'] },
+  // Bills
+  { intent: 'bill_electricity', name: 'Electricity Bill', cat: 'Bills', phrases: ['pay electricity bill', 'electricity bill', 'bijli bill', 'light bill'] },
+  { intent: 'bill_water', name: 'Water Bill', cat: 'Bills', phrases: ['pay water bill', 'water bill payment', 'water bill'] },
+  { intent: 'bill_gas', name: 'Gas Bill', cat: 'Bills', phrases: ['pay gas bill', 'gas bill', 'piped gas', 'lpg bill'] },
+  { intent: 'bill_mobile', name: 'Mobile Recharge', cat: 'Bills', phrases: ['mobile recharge', 'recharge phone', 'prepaid recharge', 'phone recharge', 'mobile bill'] },
+  { intent: 'bill_dth', name: 'DTH Bill', cat: 'Bills', phrases: ['pay dth bill', 'tata sky', 'dish tv', 'dth recharge', 'set top box'] },
+  { intent: 'bill_fastag', name: 'FASTag Recharge', cat: 'Bills', phrases: ['pay fastag', 'fastag recharge', 'toll tax', 'fastag top up'] },
+  { intent: 'bill_broadband', name: 'Broadband Bill', cat: 'Bills', phrases: ['pay broadband bill', 'internet bill', 'wifi bill', 'broadband payment'] },
+  { intent: 'bill_creditCard', name: 'Credit Card Bill', cat: 'Bills', phrases: ['pay credit card bill', 'credit card payment', 'credit card due'] },
+  { intent: 'bill_loanEmi', name: 'Loan EMI', cat: 'Bills', phrases: ['pay loan emi', 'loan payment', 'emi payment'] },
+  { intent: 'bill_insurance', name: 'Insurance Premium', cat: 'Bills', phrases: ['pay insurance premium', 'insurance payment', 'policy premium'] },
+  // Music
+  { intent: 'generate_song', name: 'Generate AI Song', cat: 'Music', phrases: ['generate a song', 'create a song', 'make music', 'ai song', 'compose music', 'create a birthday song', 'bollywood song', 'make a love song'] },
+  { intent: 'text_to_speech', name: 'Text to Speech', cat: 'Music', phrases: ['text to speech', 'tts', 'convert text to audio', 'read out text', 'voice from text', 'ai voice'] },
+  { intent: 'sound_effects', name: 'AI Sound Effects', cat: 'Music', phrases: ['sound effect', 'sfx', 'create sound', 'generate sound effect', 'ai sound'] },
+  // Wallet
+  { intent: 'wallet_check', name: 'Check Wallet Balance', cat: 'Wallet', phrases: ['wallet balance', 'check balance', 'how much money', 'my balance', 'wallet'] },
+  { intent: 'wallet_add', name: 'Add Money to Wallet', cat: 'Wallet', phrases: ['add money to wallet', 'recharge wallet', 'top up wallet', 'add funds', 'deposit money'] },
+  // Occasions
+  { intent: 'occasion_add', name: 'Add Occasion', cat: 'Occasions', phrases: ['add birthday', 'add occasion', 'add anniversary', 'save birthday', 'remember birthday'] },
+  // Misc
+  { intent: 'referral', name: 'Referral Program', cat: 'Account', phrases: ['referral', 'refer a friend', 'my referral code', 'earn commission', 'referral earnings'] },
+  { intent: 'view_bookings', name: 'View My Bookings', cat: 'Account', phrases: ['my bookings', 'view bookings', 'booking history', 'past orders', 'order status'] },
+  { intent: 'edit_profile', name: 'Edit Profile', cat: 'Account', phrases: ['edit profile', 'update profile', 'change name', 'profile settings'] },
+  { intent: 'messages', name: 'Messages', cat: 'Account', phrases: ['messages', 'chats', 'inbox', 'my chats', 'celebrity messages'] },
+  { intent: 'favorites', name: 'Favorites', cat: 'Account', phrases: ['favorites', 'following', 'liked celebrities', 'subscribed celebrities'] },
+  { intent: 'for_business', name: 'WishMe for Business', cat: 'Business', phrases: ['business', 'brand endorsement', 'celebrity campaign', 'for business', 'brand promotion'] },
+  { intent: 'become_celebrity', name: 'Become a Celebrity', cat: 'Celebrity', phrases: ['become celebrity', 'register as celebrity', 'join as celebrity', 'celebrity signup'] },
+];
+
+const INTENT_SLOTS: Record<string, Array<{ key: string; label: string; required: boolean; question: string; options?: string[] }>> = {
+  celebrity_wish: [
+    { key: 'celebrity', label: 'Celebrity Name', required: true, question: 'Which celebrity would you like the wish from? (e.g. Amitabh Bachchan, Ayushmann Khurrana)' },
+    { key: 'occasion', label: 'Occasion', required: true, question: 'What is the occasion?', options: ['Birthday', 'Anniversary', 'Wedding', 'Graduation', 'Baby Shower', 'Farewell', 'Get Well Soon', 'Congratulations', 'New Year', 'Other'] },
+    { key: 'recipientName', label: "Recipient's Name", required: true, question: "What is the recipient's name? (Who should the celebrity address?)" },
+    { key: 'message', label: 'Message', required: true, question: 'What message or instructions should the celebrity follow? (What should they say?)' },
+    { key: 'language', label: 'Language', required: false, question: 'What language should the video be in?' },
+  ],
+  voice_call_wish: [
+    { key: 'celebrity', label: 'Celebrity', required: true, question: 'Which celebrity would you like the voice call wish from?' },
+    { key: 'occasion', label: 'Occasion', required: true, question: 'What is the occasion?', options: ['Birthday', 'Anniversary', 'Graduation', 'New Year', 'Diwali', 'Promotion', 'Wedding', 'Other'] },
+    { key: 'recipientName', label: "Recipient's Name", required: true, question: "Who should the celebrity call? What's their name?" },
+    { key: 'tone', label: 'Tone', required: false, question: 'What tone should the call have?' },
+    { key: 'language', label: 'Language', required: false, question: 'In which language?' },
+  ],
+  flight_booking: [
+    { key: 'fromCity', label: 'From City', required: true, question: 'Which city are you flying from?' },
+    { key: 'toCity', label: 'To City', required: true, question: 'Which city are you flying to?' },
+    { key: 'travelDate', label: 'Travel Date', required: true, question: 'What date do you want to fly?' },
+    { key: 'travellers', label: 'Travellers', required: false, question: 'How many travellers?' },
+    { key: 'cabin', label: 'Cabin Class', required: false, question: 'Which cabin class? (Economy / Business / First Class)' },
+  ],
+  hotel_booking: [
+    { key: 'hotelCity', label: 'City', required: true, question: 'Which city do you need a hotel in?' },
+    { key: 'checkIn', label: 'Check-in Date', required: true, question: 'When do you want to check in?' },
+    { key: 'checkOut', label: 'Check-out Date', required: true, question: 'When do you want to check out?' },
+  ],
+  bus_booking: [
+    { key: 'busFrom', label: 'From City', required: true, question: 'Where are you travelling from?' },
+    { key: 'busTo', label: 'To City', required: true, question: 'Where are you travelling to?' },
+    { key: 'busDate', label: 'Travel Date', required: true, question: 'What date do you want to travel?' },
+  ],
+  bill_electricity: [{ key: 'billConsumerNumber', label: 'Consumer Number', required: true, question: 'What is your electricity consumer number?' }],
+  bill_water: [{ key: 'billConsumerNumber', label: 'Consumer Number', required: true, question: 'What is your water consumer number?' }],
+  bill_gas: [{ key: 'billConsumerNumber', label: 'Consumer Number', required: true, question: 'What is your gas consumer number?' }],
+  bill_mobile: [{ key: 'billConsumerNumber', label: 'Mobile Number', required: true, question: 'What is the mobile number to recharge?' }],
+  bill_dth: [{ key: 'billConsumerNumber', label: 'Customer ID', required: true, question: 'What is your DTH Customer ID?' }],
+  bill_fastag: [{ key: 'billConsumerNumber', label: 'Vehicle Number', required: true, question: 'What is your vehicle number for FASTag?' }],
+  bill_broadband: [{ key: 'billConsumerNumber', label: 'Account ID', required: true, question: 'What is your broadband account ID or registered number?' }],
+  bill_creditCard: [{ key: 'billConsumerNumber', label: 'Card Number', required: true, question: 'What are the last 4 digits of your credit card?' }],
+  bill_loanEmi: [{ key: 'billConsumerNumber', label: 'Loan Account Number', required: true, question: 'What is your loan account number?' }],
+  bill_insurance: [{ key: 'billConsumerNumber', label: 'Policy Number', required: true, question: 'What is your insurance policy number?' }],
+  generate_song: [
+    { key: 'songTitle', label: 'Song Title', required: true, question: 'What should the song title be?' },
+    { key: 'songDescription', label: 'Description', required: true, question: 'Describe what the song should be about' },
+  ],
+  text_to_speech: [{ key: 'ttsText', label: 'Text', required: true, question: 'What text do you want to convert to speech?' }],
+  sound_effects: [{ key: 'sfxPrompt', label: 'Sound Description', required: true, question: 'Describe the sound effect you want to create' }],
+  wallet_add: [{ key: 'addAmount', label: 'Amount', required: true, question: 'How much money do you want to add to your wallet? (Minimum ₹100)' }],
+  occasion_add: [
+    { key: 'occasionPersonName', label: "Person's Name", required: true, question: "Whose occasion do you want to add?" },
+    { key: 'occasionType', label: 'Occasion Type', required: true, question: 'What type of occasion?', options: ['Birthday', 'Anniversary', 'Wedding', 'Graduation', 'Other'] },
+    { key: 'occasionDate', label: 'Date', required: true, question: 'What is the date of this occasion?' },
+  ],
+};
+
+const INTENT_ROUTES: Record<string, { route: string; serviceView?: string; billKind?: string; name: string }> = {
+  celebrity_wish: { route: '/wish-celebrity', name: 'Celebrity Search' },
+  voice_call_wish: { route: '/(tabs)/voice-call', name: 'Voice Call Wish' },
+  photo_wish: { route: '/photo-wish', name: 'Photo Wish' },
+  wish_friend: { route: '/wish-friend', name: 'Wish a Friend' },
+  image_promotion: { route: '/image-promotions', name: 'Image Promotions' },
+  greeting_card: { route: '/greeting-cards', name: 'Greeting Cards' },
+  flight_booking: { route: '/services', serviceView: 'flights', name: 'Flights' },
+  hotel_booking: { route: '/services', serviceView: 'hotels', name: 'Hotels' },
+  bus_booking: { route: '/services', serviceView: 'busTickets', name: 'Bus Tickets' },
+  bill_electricity: { route: '/services', billKind: 'electricity', name: 'Electricity Bill' },
+  bill_water: { route: '/services', billKind: 'water', name: 'Water Bill' },
+  bill_gas: { route: '/services', billKind: 'gas', name: 'Gas Bill' },
+  bill_mobile: { route: '/services', billKind: 'mobile', name: 'Mobile Recharge' },
+  bill_dth: { route: '/services', billKind: 'dth', name: 'DTH Bill' },
+  bill_fastag: { route: '/services', billKind: 'fastag', name: 'FASTag' },
+  bill_broadband: { route: '/services', billKind: 'broadband', name: 'Broadband Bill' },
+  bill_creditCard: { route: '/services', billKind: 'creditCard', name: 'Credit Card Bill' },
+  bill_loanEmi: { route: '/services', billKind: 'loanEmi', name: 'Loan EMI' },
+  bill_insurance: { route: '/services', billKind: 'insurance', name: 'Insurance Premium' },
+  generate_song: { route: '/(tabs)/music', name: 'AI Music Studio' },
+  text_to_speech: { route: '/(tabs)/music', name: 'AI Music Studio' },
+  sound_effects: { route: '/(tabs)/music', name: 'AI Music Studio' },
+  wallet_check: { route: '/wallet', name: 'Wallet' },
+  wallet_add: { route: '/wallet', name: 'Wallet' },
+  occasion_add: { route: '/occasions', name: 'Occasions' },
+  referral: { route: '/referrals', name: 'Referrals' },
+  view_bookings: { route: '/bookings', name: 'Bookings' },
+  edit_profile: { route: '/edit-profile', name: 'Edit Profile' },
+  messages: { route: '/messages', name: 'Messages' },
+  favorites: { route: '/favorites', name: 'Favorites' },
+  for_business: { route: '/for-business', name: 'For Business' },
+  become_celebrity: { route: '/celebrity-signup', name: 'Celebrity Signup' },
+};
+
+// ─── Helper: call AI with fallbacks ───────────────────────────────────────────
+
+async function callAI(messages: Array<{ role: string; content: string }>): Promise<string> {
+  const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY') || Deno.env.get('LOVABLE_API_KEY');
+  const GEMINI_API_KEY = Deno.env.get('GOOGLE_GEMINI_API_KEY') || Deno.env.get('GEMINI_API_KEY');
+
+  // Try OpenRouter first
+  if (OPENROUTER_API_KEY) {
+    for (const model of MODEL_CHAIN) {
+      try {
+        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://wishme.today',
+            'X-Title': 'WishMe AI Agent',
+          },
+          body: JSON.stringify({
+            model,
+            messages,
+            max_tokens: 800,
+            temperature: 0.4,
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const content = data.choices?.[0]?.message?.content;
+          if (content) return content;
+        }
+      } catch {}
+    }
+  }
+
+  // Fallback to Google Gemini direct API
+  if (GEMINI_API_KEY) {
+    try {
+      const prompt = messages.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) return text;
+      }
+    } catch {}
+  }
+
+  // Fallback response if all AI keys fail
+  return "I'm ready to help you with celebrity video wishes, travel bookings, bill payments, and music creation on WishMe! What would you like to do?";
 }
 
-interface SearchResult {
-  type: 'page' | 'feature' | 'form' | 'faq';
-  title: string;
-  content: string;
-  relevance: number;
-  metadata?: any;
+function detectIntent(text: string): string | null {
+  const lower = text.toLowerCase();
+  let best: string | null = null;
+  let bestScore = 0;
+
+  for (const item of INTENT_CATALOG) {
+    for (const phrase of item.phrases) {
+      const words = phrase.split(' ');
+      const matched = words.filter((w) => lower.includes(w)).length;
+      const score = matched / words.length;
+      if (score > bestScore && score >= 0.4) {
+        bestScore = score;
+        best = item.intent;
+      }
+    }
+  }
+  return best;
 }
 
-// Simple keyword-based search for knowledge base
-function searchKnowledgeBase(query: string, currentRoute?: string): SearchResult[] {
-  const queryLower = query.toLowerCase();
-  const results: SearchResult[] = [];
+function buildActionPlan(intent: string, slots: Record<string, unknown>) {
+  const routeInfo = INTENT_ROUTES[intent];
+  if (!routeInfo) return [];
 
-  // Navigation keywords
-  const navKeywords = [
-    { keywords: ['home', 'main', 'start'], route: '/', name: 'Home', desc: 'Main landing page' },
-    { keywords: ['celebrity', 'celebrities', 'browse', 'find'], route: '/celebrities', name: 'Browse Celebrities', desc: 'Search and book celebrities' },
-    { keywords: ['book', 'booking', 'order'], route: '/bookings', name: 'My Bookings', desc: 'View your bookings' },
-    { keywords: ['music', 'song', 'generate', 'ai music'], route: '/ai-music', name: 'AI Music Studio', desc: 'Generate custom songs' },
-    { keywords: ['greeting', 'card'], route: '/greeting-cards', name: 'Greeting Cards', desc: 'Create AI greeting cards' },
-    { keywords: ['occasion', 'birthday', 'anniversary'], route: '/occasions', name: 'Occasions', desc: 'Special occasions' },
-    { keywords: ['profile', 'account', 'settings'], route: '/profile', name: 'Profile', desc: 'Manage your profile' },
-    { keywords: ['wallet', 'balance', 'money', 'funds'], route: '/wallet', name: 'Wallet', desc: 'Manage wallet and payments' },
-    { keywords: ['following', 'favorite', 'subscribe'], route: '/following', name: 'Following', desc: 'Your favorite celebrities' },
-    { keywords: ['message', 'chat', 'conversation'], route: '/messages', name: 'Messages', desc: 'Chat with celebrities' },
-    { keywords: ['celebrity signup', 'become celebrity', 'join'], route: '/celebrity-signup', name: 'Become a Celebrity', desc: 'Register as a celebrity' },
-    { keywords: ['dashboard', 'celebrity panel'], route: '/celebrity-dashboard', name: 'Celebrity Dashboard', desc: 'Manage your celebrity profile' },
-    { keywords: ['admin', 'manage'], route: '/admin', name: 'Admin Panel', desc: 'Platform administration' },
+  const steps = [
+    {
+      type: 'navigate',
+      route: routeInfo.route,
+      serviceView: routeInfo.serviceView,
+      billKind: routeInfo.billKind,
+      label: `Opening ${routeInfo.name}...`,
+    },
+    {
+      type: 'prefill',
+      fields: slots,
+      label: 'Filling in your details...',
+    },
+    {
+      type: 'complete',
+      label: 'Done! ✅',
+      message: `All done! I've opened ${routeInfo.name} and filled in your details.`,
+    },
   ];
 
-  navKeywords.forEach(nav => {
-    const matched = nav.keywords.some(kw => queryLower.includes(kw));
-    if (matched) {
-      results.push({
-        type: 'page',
-        title: nav.name,
-        content: nav.desc,
-        relevance: currentRoute === nav.route ? 15 : 10,
-        metadata: { route: nav.route, keywords: nav.keywords }
-      });
-    }
-  });
-
-  // FAQ matching - Enhanced with more comprehensive FAQs
-  const faqs = [
-    { q: 'how to book celebrity', a: 'Browse celebrities at /celebrities, select one, choose service type (video/text/promotion), fill booking form with recipient details, review and pay. Track status in /bookings', keywords: ['book', 'how', 'celebrity', 'order'] },
-    { q: 'payment methods', a: 'We accept UPI, credit/debit cards, net banking via Razorpay. You can also use wallet balance for instant payment. All transactions are secure.', keywords: ['payment', 'pay', 'method', 'razorpay', 'upi'] },
-    { q: 'add money to wallet', a: 'Go to /wallet, click Add Funds, enter amount (min ₹100), complete payment via Razorpay. Wallet balance can be used for instant bookings.', keywords: ['add money', 'wallet', 'recharge', 'funds', 'balance'] },
-    { q: 'generate ai music', a: 'Visit /ai-music, enter song title and description, choose genre and mood, select with/without lyrics, click Generate. Free users get 3 generations/month.', keywords: ['music', 'song', 'generate', 'ai', 'create'] },
-    { q: 'create greeting card', a: 'Go to /greeting-cards, select occasion, enter recipient name and greeting text, optionally upload reference image, generate card (costs 2 credits).', keywords: ['greeting', 'card', 'occasion', 'create'] },
-    { q: 'become celebrity', a: 'Click /celebrity-signup, fill registration form with details, upload required documents (ID proof, consent video/photo), submit for approval. You will be notified via email.', keywords: ['celebrity', 'join', 'register', 'signup', 'become'] },
-    { q: 'celebrity services and pricing', a: 'Video Message (₹2k-25k, 3-7 days), Text Message (₹500-5k, 1-2 days), Image Promotion (₹10k-50k, 5-10 days), Video Promotion (₹25k-1L, 7-14 days)', keywords: ['service', 'price', 'cost', 'pricing', 'rate'] },
-    { q: 'booking delivery time', a: 'Video messages: 3-7 days, Text: 1-2 days, Image promotion: 5-10 days, Video promotion: 7-14 days. Timeline starts after payment confirmation.', keywords: ['delivery', 'time', 'when', 'how long', 'duration'] },
-    { q: 'cancel booking', a: 'Go to /bookings, select booking, click Request Cancellation. Full refund if cancelled before celebrity accepts. Partial refund after acceptance based on progress.', keywords: ['cancel', 'refund', 'cancellation'] },
-    { q: 'payment failed', a: 'Check internet connection, verify payment details, try different method or use wallet. If money deducted, contact support with transaction ID.', keywords: ['payment', 'failed', 'error', 'problem'] },
-    { q: 'follow favorite celebrities', a: 'Browse /celebrities, click heart icon on celebrity cards to add to favorites. Access your favorites from /following for quick bookings.', keywords: ['follow', 'favorite', 'subscribe', 'heart'] },
-    { q: 'referral program', a: 'Get referral code from /referrals, share with friends. Earn commission on their bookings (Level 1 and Level 2). Track earnings in referral dashboard.', keywords: ['referral', 'refer', 'earn', 'commission'] },
-    { q: 'message celebrity', a: 'After booking, go to /messages to chat with celebrity. Send updates, ask questions, or provide additional details for your booking.', keywords: ['message', 'chat', 'talk', 'conversation'] },
-  ];
-
-  faqs.forEach(faq => {
-    const matched = faq.keywords.some(kw => queryLower.includes(kw));
-    if (matched) {
-      results.push({
-        type: 'faq',
-        title: faq.q,
-        content: faq.a,
-        relevance: 8,
-        metadata: { keywords: faq.keywords }
-      });
-    }
-  });
-
-  // Troubleshooting specific issues
-  const troubleshooting = [
-    { issue: 'video not playing', solution: 'Check internet connection, try different browser, clear cache, or download video instead of streaming', keywords: ['video', 'play', 'not working', 'problem'] },
-    { issue: 'login problem', solution: 'Use Forgot Password to reset, verify email/phone, clear cookies, or try Google login', keywords: ['login', 'password', 'access', 'cant login'] },
-    { issue: 'profile not saving', solution: 'Fill all required fields, check image size (max 5MB), verify phone format, click Save button, refresh to verify', keywords: ['profile', 'save', 'update', 'not saving'] },
-  ];
-
-  troubleshooting.forEach(item => {
-    const matched = item.keywords.some(kw => queryLower.includes(kw));
-    if (matched) {
-      results.push({
-        type: 'faq',
-        title: item.issue,
-        content: item.solution,
-        relevance: 9,
-        metadata: { keywords: item.keywords }
-      });
-    }
-  });
-
-  return results.sort((a, b) => b.relevance - a.relevance).slice(0, 5);
+  return steps;
 }
 
-// Build AI prompt with context
-function buildAIPrompt(request: AIAssistantRequest, searchResults: SearchResult[]): string {
-  const { query, context } = request;
-  
-  let prompt = `You are a friendly and helpful AI assistant. You can answer any questions the user has - not limited to any specific platform or topic.
+// ─── Main handler ─────────────────────────────────────────────────────────────
 
-Current Context:
-- User is on page: ${context?.currentRoute || 'unknown'}
-- User role: ${context?.userRole || 'user'}
-- Input method: ${context?.isVoiceInput ? 'Voice' : 'Text'}
-
-${searchResults.length > 0 ? `Relevant Information:\n${searchResults.map(r => `• ${r.title}: ${r.content}${r.metadata?.route ? ` (Navigate to ${r.metadata.route})` : ''}`).join('\n')}\n` : ''}
-
-Guidelines:
-1. Be conversational, friendly, and helpful
-2. Answer ANY question the user asks - general knowledge, advice, explanations, etc.
-3. For platform-specific questions, use the provided context
-4. Be concise${context?.isVoiceInput ? ' and brief for voice responses (2-3 sentences max)' : ' but thorough'}
-5. If suggesting navigation, format as: "Navigate to [Page Name] (/route)"
-6. You can discuss any topic - science, history, technology, entertainment, daily life, etc.
-7. Provide accurate, helpful information on whatever the user asks about
-
-User question: ${query}
-
-Provide a helpful, accurate response:`;
-
-  return prompt;
-}
+// ─── Module-level cache for fastest transcription ────────────────────────────
+let cachedGeminiKey: string | null = null;
+let cachedGeminiModel: string | null = null;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -152,132 +265,202 @@ serve(async (req) => {
   }
 
   try {
-    const requestData: AIAssistantRequest = await req.json();
-    const { query, context, conversationHistory } = requestData;
-
-    if (!query || query.trim().length === 0) {
-      throw new Error('Query is required');
+    const rawBody = await req.text();
+    let body: any = {};
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      body = { query: rawBody };
     }
 
-    console.log('AI Assistant request:', { 
-      query, 
-      route: context?.currentRoute, 
-      isVoice: context?.isVoiceInput,
-      historyLength: conversationHistory?.length || 0
-    });
+    const { agentMode = false, currentIntent = null, collectedSlots = {} } = body;
+    let userQuery = body.query ? String(body.query).trim() : '';
 
-    // Get Lovable AI API key
-    const LOVABLE_API_KEY = Deno.env.get('OPENROUTER_API_KEY') || Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY not configured');
-    }
+    console.log(`[ai-assistant] Incoming request. hasAudio=${!!body.audioBase64}, query="${userQuery}", currentIntent="${currentIntent}"`);
 
-    // Search knowledge base
-    const searchResults = searchKnowledgeBase(query, context?.currentRoute);
+    // If audio is provided, transcribe it using direct, ultra-fast Gemini Flash endpoint
+    if (body.audioBase64) {
+      console.log(`[ai-assistant] Processing audio payload. Base64 length: ${body.audioBase64.length}`);
+      const GOOGLE_KEY = Deno.env.get('GOOGLE_GEMINI_API_KEY');
+      const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY');
+      const directKeys = [GEMINI_KEY, GOOGLE_KEY].filter(Boolean) as string[];
+      const inputMime = body.mimeType || 'audio/mp4';
 
-    // Build AI prompt
-    const systemPrompt = buildAIPrompt(requestData, searchResults);
-
-    // Prepare conversation history
-    const messages = [
-      { role: 'system', content: systemPrompt }
-    ];
-
-    // Add conversation history if provided
-    if (conversationHistory && conversationHistory.length > 0) {
-      // Only include last 6 messages to keep context manageable
-      const recentHistory = conversationHistory.slice(-6);
-      messages.push(...recentHistory);
-    }
-
-    // Add current user query
-    messages.push({ role: 'user', content: query });
-
-    console.log('Calling Lovable AI with', messages.length, 'messages');
-
-    // Call Lovable AI
-    const aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: messages,
-        max_tokens: context?.isVoiceInput ? 300 : 500,
-        temperature: 0.7,
-      }),
-    });
-
-    if (!aiResponse.ok) {
-      const errorText = await aiResponse.text();
-      console.error('Lovable AI error:', aiResponse.status, errorText);
-      
-      if (aiResponse.status === 429) {
-        throw new Error('Rate limit exceeded. Please try again in a moment.');
+      // 1. FAST PATH: If we have a cached working key & model, call it directly (<300ms)
+      if (cachedGeminiKey && cachedGeminiModel) {
+        try {
+          console.log(`[ai-assistant] Fast path transcription using cached model: ${cachedGeminiModel}...`);
+          const fastUrl = `https://generativelanguage.googleapis.com/v1beta/models/${cachedGeminiModel}:generateContent?key=${cachedGeminiKey}`;
+          const fRes = await fetch(fastUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    { inlineData: { mimeType: inputMime, data: body.audioBase64 } },
+                    { text: "Transcribe the spoken audio verbatim in English or the original language. Output ONLY the transcribed text, nothing else." },
+                  ],
+                },
+              ],
+            }),
+          });
+          if (fRes.ok) {
+            const fData = await fRes.json();
+            const text = fData.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+            if (text) {
+              userQuery = text.replace(/^["']|["']$/g, '').trim();
+              console.log(`[ai-assistant] Fast path transcribed: "${userQuery}"`);
+            }
+          } else {
+            console.warn('[ai-assistant] Fast path failed, resetting cache');
+            cachedGeminiKey = null;
+            cachedGeminiModel = null;
+          }
+        } catch {
+          cachedGeminiKey = null;
+          cachedGeminiModel = null;
+        }
       }
-      if (aiResponse.status === 402) {
-        throw new Error('AI service payment required. Please contact support.');
+
+      // 2. DISCOVERY PATH (only if fast path didn't resolve)
+      if (!userQuery && directKeys.length > 0) {
+        for (const key of directKeys) {
+          if (userQuery) break;
+          try {
+            console.log('[ai-assistant] Querying Gemini models list for fast candidate...');
+            const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+            if (listRes.ok) {
+              const listData = await listRes.json();
+              const availableModels: string[] = (listData.models || [])
+                .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
+                .map((m: any) => m.name.replace(/^models\//, ''));
+
+              // Prioritize flash models
+              const candidateModels = availableModels.filter(m => m.includes('flash')).slice(0, 3);
+              for (const gModel of candidateModels) {
+                try {
+                  console.log(`[ai-assistant] Trying model ${gModel}...`);
+                  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent?key=${key}`;
+                  const gRes = await fetch(geminiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      contents: [
+                        {
+                          parts: [
+                            { inlineData: { mimeType: inputMime, data: body.audioBase64 } },
+                            { text: "Transcribe the spoken audio verbatim in English or the original language. Output ONLY the transcribed text, nothing else." },
+                          ],
+                        },
+                      ],
+                    }),
+                  });
+
+                  if (gRes.ok) {
+                    const gData = await gRes.json();
+                    const text = gData.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+                    if (text) {
+                      userQuery = text.replace(/^["']|["']$/g, '').trim();
+                      console.log(`[ai-assistant] Model ${gModel} succeeded: "${userQuery}"`);
+                      // Cache for all future calls
+                      cachedGeminiKey = key;
+                      cachedGeminiModel = gModel;
+                      break;
+                    }
+                  }
+                } catch {}
+              }
+            }
+          } catch {}
+        }
       }
-      throw new Error(`AI service error: ${aiResponse.status}`);
     }
 
-    const aiData = await aiResponse.json();
-    const assistantMessage = aiData.choices[0]?.message?.content || 'I apologize, I could not generate a response.';
+    console.log(`[ai-assistant] Final resolved query: "${userQuery}"`);
 
-    console.log('AI response received:', assistantMessage.substring(0, 100));
-
-    // Parse response for actions
-    const actions: Array<{ type: string; route: string; label: string }> = [];
-    const suggestions: string[] = [];
-
-    // Extract navigation suggestions
-    const navRegex = /Navigate to (.+?) \((.+?)\)/g;
-    let match;
-    while ((match = navRegex.exec(assistantMessage)) !== null) {
-      actions.push({
-        type: 'navigate',
-        route: match[2],
-        label: match[1]
-      });
+    if (!userQuery || userQuery.trim().length === 0) {
+      console.log('[ai-assistant] No query resolved, returning default welcoming prompt');
+      return new Response(
+        JSON.stringify({
+          mode: 'chat',
+          message: "Hey! How can I help you today? You can ask me to book a hotel, book a flight, pay a bill, or create a celebrity wish!",
+          query: "",
+          transcribedText: "",
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
     }
 
-    // Add quick actions based on search results
-    searchResults.forEach(result => {
-      if (result.type === 'page' && result.metadata?.route) {
-        suggestions.push(`Go to ${result.title}`);
-      }
-    });
+    const detectedIntent = currentIntent || detectIntent(userQuery);
 
-    // Response
+    if (detectedIntent) {
+      const slotDefs = INTENT_SLOTS[detectedIntent] ?? [];
+      const updatedSlots = { ...collectedSlots };
+
+      // Extract slot values
+      const missing = slotDefs.filter((s) => s.required && (updatedSlots[s.key] === undefined || updatedSlots[s.key] === ''));
+
+      if (missing.length === 0) {
+        const actionPlan = buildActionPlan(detectedIntent, updatedSlots);
+        const name = INTENT_CATALOG.find((i) => i.intent === detectedIntent)?.name ?? detectedIntent;
+        return new Response(
+          JSON.stringify({
+            mode: 'agent',
+            query: userQuery,
+            transcribedText: userQuery,
+            message: `Doing this for you now! Opening ${name}... 🚀`,
+            intent: detectedIntent,
+            slots: updatedSlots,
+            missingSlots: [],
+            actionPlan,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+
+      // Ask next question
+      const nextQ = missing[0];
+      return new Response(
+        JSON.stringify({
+          mode: 'agent',
+          query: userQuery,
+          transcribedText: userQuery,
+          message: nextQ.question,
+          intent: detectedIntent,
+          slots: updatedSlots,
+          missingSlots: missing.map((s) => s.key),
+          suggestions: nextQ.options?.slice(0, 5) ?? [],
+          actionPlan: null,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // General chat
+    const aiMessage = await callAI([{ role: 'user', content: userQuery }]);
     return new Response(
       JSON.stringify({
-        message: assistantMessage,
-        actions: actions.length > 0 ? actions : undefined,
-        suggestions: suggestions.slice(0, 3),
-        searchResults: searchResults.map(r => ({
-          type: r.type,
-          title: r.title,
-          route: r.metadata?.route
-        }))
+        mode: 'chat',
+        query: userQuery,
+        transcribedText: userQuery,
+        message: aiMessage,
+        intent: null,
+        suggestions: ['🎬 Celebrity Wish', '✈️ Book Flight', '💡 Pay Bill', '🎵 Make a Song'],
       }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      }
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
 
-  } catch (error: any) {
-    console.error('Error in ai-assistant function:', error);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
     return new Response(
       JSON.stringify({
-        error: error.message || 'Internal server error',
-        message: 'I apologize, I encountered an error processing your request. Please try again.'
+        mode: 'chat',
+        query: '',
+        message: "I'm ready to assist you with celebrity wishes, travel, bills, and AI music!",
+        error: msg,
       }),
-      {
-        status: error.message.includes('Rate limit') ? 429 : 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      }
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   }
 });

@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { orderId } = await req.json();
+    const { orderId, cardUrl: clientCardUrl, greetingText: clientGreeting } = await req.json();
 
     if (!orderId) {
       return new Response(
@@ -52,12 +52,35 @@ serve(async (req) => {
       );
     }
 
-    // Validate that card has been generated
-    if (!order.generated_card_image_url || !order.greeting_text) {
+    const cardImageUrl = order.generated_card_image_url || order.card_url || clientCardUrl || null;
+    const greetingText = order.greeting_text || clientGreeting || null;
+
+    if (!cardImageUrl || !greetingText) {
+      console.error('Card missing on send', {
+        hasGeneratedUrl: !!order.generated_card_image_url,
+        hasCardUrl: !!order.card_url,
+        hasGreeting: !!order.greeting_text,
+        hasClientCard: !!clientCardUrl,
+        hasClientGreeting: !!clientGreeting,
+      });
       return new Response(
         JSON.stringify({ error: 'Card must be generated before sending' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    if (!order.generated_card_image_url || !order.greeting_text || !order.card_url) {
+      const { error: persistError } = await supabaseClient
+        .from('wish_celebrity_orders')
+        .update({
+          generated_card_image_url: cardImageUrl,
+          card_url: cardImageUrl,
+          greeting_text: greetingText,
+        })
+        .eq('id', orderId);
+      if (persistError) {
+        console.error('Error persisting card before send:', persistError);
+      }
     }
 
     // Check if already approved/sent
@@ -70,8 +93,6 @@ serve(async (req) => {
 
     const userId = order.user_id;
     const celebrityId = order.celebrity_id;
-    const greetingText = order.greeting_text;
-    const cardImageUrl = order.generated_card_image_url;
 
     // Find or create conversation between user and celebrity
     let conversation;

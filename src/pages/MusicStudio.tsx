@@ -92,6 +92,7 @@ export default function MusicStudio() {
   const [musicPollingMessage, setMusicPollingMessage] = useState<string | null>(null);
   const [isGeneratingLyrics, setIsGeneratingLyrics] = useState(false);
   const musicPollingRef = useRef<NodeJS.Timeout | null>(null);
+  const imageMusicPollingRef = useRef<NodeJS.Timeout | null>(null);
   const [savedSongs, setSavedSongs] = useState<SavedSong[]>([]);
   const [loadingSavedSongs, setLoadingSavedSongs] = useState(false);
 
@@ -115,6 +116,7 @@ export default function MusicStudio() {
   const [imageMusicSource, setImageMusicSource] = useState<'generate' | 'upload'>('generate');
   const [imageMusicAudioFile, setImageMusicAudioFile] = useState<File | null>(null);
   const [isGeneratingImageMusic, setIsGeneratingImageMusic] = useState(false);
+  const [imageMusicPollingMessage, setImageMusicPollingMessage] = useState<string | null>(null);
   const [imageMusicResult, setImageMusicResult] = useState<{ audioUrl: string; videoUrl?: string; imageBase64: string; hasVocals?: boolean } | null>(null);
   const [isPlayingImageMusic, setIsPlayingImageMusic] = useState(false);
   const imageMusicAudioRef = useRef<HTMLAudioElement>(null);
@@ -190,6 +192,7 @@ export default function MusicStudio() {
   useEffect(() => {
     return () => {
       if (musicPollingRef.current) clearInterval(musicPollingRef.current);
+      if (imageMusicPollingRef.current) clearInterval(imageMusicPollingRef.current);
     };
   }, []);
 
@@ -573,9 +576,19 @@ export default function MusicStudio() {
       await updateWallet(-CLONE_COST);
       const audioBase64 = await fileToBase64(cloneAudioFile);
       const { data, error } = await supabase.functions.invoke('elevenlabs-clone-voice', { 
-        body: { audioBase64, voiceName: cloneVoiceName, voiceDescription: cloneVoiceDesc } 
+        body: {
+          audioBase64,
+          voiceName: cloneVoiceName,
+          voiceDescription: cloneVoiceDesc,
+          mimeType: cloneAudioFile.type,
+          fileName: cloneAudioFile.name,
+        }
       });
-      if (error || !data?.success) throw new Error(data?.error || 'Failed');
+      let errMsg = data?.error as string | undefined;
+      if (error && !errMsg) {
+        try { errMsg = (await error.context?.json?.())?.error; } catch { /* ignore */ }
+      }
+      if (error || !data?.success) throw new Error(errMsg || error?.message || 'Failed to clone voice');
       setClonedVoiceId(data.voiceId);
       await fetchVoices();
       toast({ title: "Success!", description: "Your voice has been cloned! Use it for TTS and Music generation." });
@@ -610,66 +623,133 @@ export default function MusicStudio() {
     if (!imageMusicFile) return toast({ title: "Error", description: "Upload an image", variant: "destructive" });
     if (imageMusicSource === 'upload' && !imageMusicAudioFile) return toast({ title: "Error", description: "Upload an audio file", variant: "destructive" });
     if (imageMusicSource === 'generate' && !imageMusicDesc.trim() && !imageMusicLyrics.trim()) return toast({ title: "Error", description: "Enter description or lyrics", variant: "destructive" });
-    
-    const cost = imageMusicLyrics.trim() ? 150 : IMAGE_MUSIC_COST; // ₹150 with vocals, ₹120 instrumental
+
+    const hasVocals = !!imageMusicLyrics.trim();
+    const cost = imageMusicSource === 'upload' ? IMAGE_MUSIC_COST : (hasVocals ? FULL_SONG_COST : MUSIC_COST);
     if (walletBalance < cost) return toast({ title: "Insufficient Balance", variant: "destructive" });
-    
-    setIsGeneratingImageMusic(true); 
+
+    setIsGeneratingImageMusic(true);
     setImageMusicResult(null);
-    
+    setImageMusicPollingMessage(null);
+
+    const imageDataUrl = imageMusicPreview || await fileToBase64(imageMusicFile);
+
     try {
-      await updateWallet(-cost);
-      const imageBase64 = await fileToBase64(imageMusicFile);
-      let uploadedAudioBase64: string | undefined;
       if (imageMusicSource === 'upload' && imageMusicAudioFile) {
-        uploadedAudioBase64 = await fileToBase64(imageMusicAudioFile);
+        await updateWallet(-cost);
+        const audioUrl = await fileToBase64(imageMusicAudioFile);
+        if (profile?.id) {
+          await supabase.from('image_music_generations').insert({
+            user_id: profile.id,
+            image_url: imageDataUrl.substring(0, 200),
+            audio_url: audioUrl,
+            description: imageMusicDesc,
+            lyrics: imageMusicLyrics || null,
+            genre: imageMusicGenre,
+            mood: imageMusicMood,
+            duration_seconds: imageMusicDuration[0],
+            has_vocals: false,
+            amount_charged: cost,
+            status: 'completed',
+            completed_at: new Date().toISOString()
+          });
+        }
+        setImageMusicResult({ audioUrl, imageBase64: imageDataUrl, hasVocals: false });
+        toast({ title: "Success!", description: "Your music is ready! Creating video..." });
+        setIsGeneratingImageMusic(false);
+        return;
       }
-      const { data, error } = await supabase.functions.invoke('elevenlabs-image-music-video', { 
-        body: { 
-          imageBase64, 
-          musicDescription: imageMusicDesc, 
-          lyrics: imageMusicLyrics, 
-          genre: imageMusicGenre, 
-          mood: imageMusicMood,
-          language: imageMusicLanguage, 
-          durationSeconds: imageMusicDuration[0], 
-          uploadedAudioBase64
-        } 
-      });
-      if (error || !data?.success) throw new Error(data?.error || 'Failed');
-      
-      const hasVocals = !!data.hasVocals;
-      
-      // Save order to database
-      if (profile?.id) {
-        await supabase.from('image_music_generations').insert({
-          user_id: profile.id,
-          image_url: data.imageBase64?.substring(0, 200),
-          audio_url: data.b2Url || data.audioUrl,
-          video_url: data.videoUrl || null,
-          description: imageMusicDesc,
-          lyrics: imageMusicLyrics || null,
+
+      setImageMusicPollingMessage("Submitting your song request...");
+      const { data, error } = await supabase.functions.invoke('generate-music', {
+        body: {
+          song_title: (imageMusicDesc || 'Image Song').slice(0, 60),
           genre: imageMusicGenre,
           mood: imageMusicMood,
-          duration_seconds: imageMusicDuration[0],
-          has_vocals: hasVocals,
-          amount_charged: cost,
-          status: 'completed',
-          completed_at: new Date().toISOString()
-        });
-      }
-      
-      setImageMusicResult({ 
-        audioUrl: data.audioUrl, 
-        imageBase64: data.imageBase64, 
-        hasVocals: hasVocals
+          prompt: imageMusicDesc,
+          lyrics: hasVocals ? imageMusicLyrics : undefined,
+          generation_type: hasVocals ? 'with_lyrics' : 'instrumental',
+          language: imageMusicLanguage,
+        }
       });
-      toast({ title: "Success!", description: hasVocals ? "Your song is ready! Creating video..." : "Your music is ready! Creating video..." });
-    } catch (e: any) { 
-      await updateWallet(cost); 
-      toast({ title: "Error", description: e.message, variant: "destructive" }); 
+      let errMsg = data?.error as string | undefined;
+      if (error && !errMsg) {
+        try { errMsg = (await error.context?.json?.())?.error; } catch { /* ignore */ }
+      }
+      if (error || data?.error) throw new Error(errMsg || error?.message || 'Failed to start music generation');
+
+      const { generation_id } = data;
+      setWalletBalance(prev => prev - cost);
+      setImageMusicPollingMessage("Composing music for your image... This takes 1-3 minutes");
+
+      const progressMessages = [
+        'Submitting your song request...',
+        'Composing music for your image...',
+        'Creating the melody...',
+        'Mixing the track...',
+        'Finalizing your song...',
+        'Almost ready...',
+      ];
+
+      let attempts = 0;
+      const maxAttempts = 60;
+      imageMusicPollingRef.current = setInterval(async () => {
+        attempts++;
+        setImageMusicPollingMessage(progressMessages[Math.min(Math.floor(attempts / 8), progressMessages.length - 1)]);
+        if (attempts >= maxAttempts) {
+          clearInterval(imageMusicPollingRef.current!);
+          imageMusicPollingRef.current = null;
+          setImageMusicPollingMessage(null);
+          setIsGeneratingImageMusic(false);
+          toast({ title: "Timeout", description: "Song generation took too long. Your wallet has been refunded.", variant: "destructive" });
+          return;
+        }
+        try {
+          const { data: statusData, error: statusError } = await supabase.functions.invoke('check-music-status', {
+            body: { generation_id }
+          });
+          if (statusError) return;
+          if (statusData?.status === 'completed') {
+            clearInterval(imageMusicPollingRef.current!);
+            imageMusicPollingRef.current = null;
+            const audioUrl = statusData.download_url || statusData.song_url;
+            if (profile?.id) {
+              await supabase.from('image_music_generations').insert({
+                user_id: profile.id,
+                image_url: imageDataUrl.substring(0, 200),
+                audio_url: audioUrl,
+                description: imageMusicDesc,
+                lyrics: imageMusicLyrics || null,
+                genre: imageMusicGenre,
+                mood: imageMusicMood,
+                duration_seconds: imageMusicDuration[0],
+                has_vocals: hasVocals,
+                amount_charged: cost,
+                status: 'completed',
+                completed_at: new Date().toISOString()
+              });
+            }
+            setImageMusicResult({ audioUrl, imageBase64: imageDataUrl, hasVocals });
+            setImageMusicPollingMessage(null);
+            setIsGeneratingImageMusic(false);
+            fetchSavedSongs({ silent: true });
+            toast({ title: "Success!", description: hasVocals ? "Your song is ready! Creating video..." : "Your music is ready! Creating video..." });
+          } else if (statusData?.status === 'failed') {
+            clearInterval(imageMusicPollingRef.current!);
+            imageMusicPollingRef.current = null;
+            setImageMusicPollingMessage(null);
+            setIsGeneratingImageMusic(false);
+            toast({ title: "Song generation failed", description: statusData.error || "Please try again. Your wallet has been refunded.", variant: "destructive" });
+          }
+        } catch (e) {
+          console.error('Image+music poll error:', e);
+        }
+      }, 5000);
+    } catch (e: any) {
+      setImageMusicPollingMessage(null);
+      setIsGeneratingImageMusic(false);
+      toast({ title: "Error", description: e.message, variant: "destructive" });
     }
-    finally { setIsGeneratingImageMusic(false); }
   };
 
   // Create MP4 video from image + audio
@@ -1872,9 +1952,9 @@ export default function MusicStudio() {
                       disabled={isGeneratingImageMusic || !imageMusicFile || (imageMusicSource === 'upload' && !imageMusicAudioFile) || (imageMusicSource === 'generate' && !imageMusicDesc && !imageMusicLyrics)}
                     >
                       {isGeneratingImageMusic ? (
-                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating Song...</>
+                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{imageMusicPollingMessage || 'Generating Song...'}</>
                       ) : (
-                        <><Image className="mr-2 h-4 w-4" />Create Video (₹{imageMusicLyrics.trim() ? 150 : IMAGE_MUSIC_COST})</>
+                        <><Image className="mr-2 h-4 w-4" />Create Video (₹{imageMusicSource === 'upload' ? IMAGE_MUSIC_COST : (imageMusicLyrics.trim() ? FULL_SONG_COST : MUSIC_COST)})</>
                       )}
                     </Button>
                   </CardContent>
@@ -1882,7 +1962,13 @@ export default function MusicStudio() {
                 <Card>
                   <CardHeader><CardTitle>Result</CardTitle></CardHeader>
                   <CardContent>
-                    {imageMusicResult ? (
+                    {isGeneratingImageMusic && !imageMusicResult ? (
+                      <div className="text-center py-12 text-muted-foreground">
+                        <Loader2 className="h-12 w-12 mx-auto mb-4 animate-spin text-primary" />
+                        <p className="font-medium text-foreground">Composing music for your image...</p>
+                        <p className="text-sm mt-2">{imageMusicPollingMessage || 'This takes 1-3 minutes'}</p>
+                      </div>
+                    ) : imageMusicResult ? (
                       <div className="space-y-4">
                         <div className="relative rounded-lg overflow-hidden">
                           <img src={imageMusicResult.imageBase64} alt="Video" className="w-full" />

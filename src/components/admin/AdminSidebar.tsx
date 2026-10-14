@@ -35,6 +35,7 @@ import {
   Sparkles,
   FolderKanban,
   Layers,
+  Bot,
 } from "lucide-react";
 import { Database } from "lucide-react";
 
@@ -55,6 +56,7 @@ const adminNavItems = [
   { title: "Media Library", url: "/admin/media-library", icon: Video },
   { title: "Banner Media", url: "/admin/banner-media-library", icon: Image },
   { title: "Communication Hub", url: "/admin/communication-hub", icon: Mail },
+  { title: "AI Assistant", url: "/admin/ai-assistant", icon: Bot },
   { title: "API Health", url: "/admin/api-health", icon: Activity },
   { title: "Database Backup", url: "/admin/database-backup", icon: Database },
   { title: "Settings", url: "/admin/settings", icon: Settings },

@@ -12,10 +12,13 @@ serve(async (req) => {
   }
 
   try {
-    const { celebrityName, occasionType, recipientName } = await req.json();
+    const body = await req.json();
+    const celebrityName = body.celebrityName || body.celebrity_name;
+    const occasionType = body.occasionType || body.occasion;
+    const recipientName = body.recipientName || body.recipient_name || 'a fan';
     console.log('Generating message suggestions for:', { celebrityName, occasionType, recipientName });
     
-    const LOVABLE_API_KEY = Deno.env.get('OPENROUTER_API_KEY') || Deno.env.get('LOVABLE_API_KEY');
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
       throw new Error('LOVABLE_API_KEY not found');
     }
@@ -33,7 +36,7 @@ Requirements:
 
 Return ONLY a JSON array of 3 strings, nothing else.`;
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${LOVABLE_API_KEY}`,
