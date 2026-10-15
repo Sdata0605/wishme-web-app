@@ -29,7 +29,17 @@ import { languageOfSpeech, speakPhoneNumbers } from '../_shared/spokenDigits.ts'
 declare const EdgeRuntime: { waitUntil: (p: Promise<unknown>) => void };
 
 /** The Sarvam key: set from the admin panel (encrypted store) first, else the server secret. */
+let keyCache: { key: string; at: number } | null = null;
+const KEY_TTL_MS = 5 * 60 * 1000;
+
 async function loadSarvamKey(): Promise<string> {
+  if (keyCache && Date.now() - keyCache.at < KEY_TTL_MS) return keyCache.key;
+  const key = await readSarvamKey();
+  if (key) keyCache = { key, at: Date.now() };
+  return key;
+}
+
+async function readSarvamKey(): Promise<string> {
   try {
     const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
     const { data } = await db.rpc('ai_secret_get', { p_name: 'ai_sarvam_api_key' });
@@ -56,6 +66,42 @@ const CHAT_URL = 'https://api.sarvam.ai/v1/chat/completions';
 const TTS_LANGS = new Set(['bn-IN', 'en-IN', 'gu-IN', 'hi-IN', 'kn-IN', 'ml-IN', 'mr-IN', 'od-IN', 'pa-IN', 'ta-IN', 'te-IN']);
 const TOOL_TIMEOUT_MS = 25_000;
 const MAX_TOOL_HOPS = 6;
+
+/** How much of the conversation the model is sent on each hop (the rest was only making every reply slower). */
+const MAX_CONTEXT_MESSAGES = 14;
+const TOOL_RESULT_CHARS_NOW = 4000;
+const TOOL_RESULT_CHARS_OLD = 600;
+/** `low` keeps the model's own thinking short; `none` leaves the setting out so the model's default applies. */
+const REASONING_EFFORT = Deno.env.get('SARVAM_REASONING_EFFORT') ?? 'low';
+
+/** Said later in a turn that is still searching. Only the languages below have them: others stay silent rather than get a wrong-language sentence. */
+const SEARCH_FILLER_MORE: Record<string, string> = {
+  'en-IN': 'Let me look a little further.',
+  'hi-IN': 'थोड़ा और देखते हैं।',
+  'mr-IN': 'आणखी थोडं पाहूया.',
+};
+const SEARCH_STILL: Record<string, string> = {
+  'en-IN': 'Still checking, nearly there.',
+  'hi-IN': 'अभी भी देख रहे हैं, बस थोड़ा और।',
+  'mr-IN': 'अजून पाहत आहोत, थोडं थांबा.',
+};
+/** A search that has not come back after this long gets the "still checking" line, once. */
+const STILL_CHECKING_MS = 4500;
+
+/** Said while a web lookup runs, if the model went straight to the tool without a word. Gender-neutral on purpose. */
+const SEARCH_FILLER: Record<string, string> = {
+  'en-IN': 'One moment, let me check.',
+  'hi-IN': 'एक मिनट, अभी देखते हैं।',
+  'bn-IN': 'এক মুহূর্ত, দেখছি।',
+  'gu-IN': 'એક મિનિટ, જોઈએ છીએ.',
+  'kn-IN': 'ಒಂದು ನಿಮಿಷ, ನೋಡೋಣ.',
+  'ml-IN': 'ഒരു നിമിഷം, നോക്കാം.',
+  'mr-IN': 'एक मिनिट, पाहूया.',
+  'od-IN': 'ଗୋଟିଏ ମିନିଟ୍, ଦେଖିବା।',
+  'pa-IN': 'ਇੱਕ ਮਿੰਟ, ਦੇਖਦੇ ਹਾਂ।',
+  'ta-IN': 'ஒரு நிமிடம், பார்க்கலாம்.',
+  'te-IN': 'ఒక్క నిమిషం, చూద్దాం.',
+};
 
 type Json = Record<string, unknown>;
 interface ToolCall { id: string; name: string; args: Json }
@@ -136,6 +182,7 @@ class Session {
   private messages: Json[] = [];
 
   private stt: Sock | null = null;
+  private sttFailures = 0;
   private sttQueue: string[] = [];
   private tts: Sock | null = null;
   private ttsLang = '';
@@ -158,7 +205,12 @@ class Session {
   private inflight = 0;
   private turnT0 = 0;
   private firstAudioSent = false;
+  /** How many web searches this turn has made (the first gets a filler, the second a different one, then silence). */
+  private searchesThisTurn = 0;
   private pendingTools = new Map<string, (r: unknown) => void>();
+
+  /** Started the moment the phone connects, so it is already loaded when the session setup arrives. */
+  private keyPromise: Promise<string> = loadSarvamKey();
 
   constructor(private phone: WebSocket, private onClosed: () => void) {
     phone.onmessage = (e) =>
@@ -245,6 +297,9 @@ class Session {
         // The phone heard the user over the assistant: stop talking even if we think we're done.
         if (this.isSpeakingNow()) this.interrupt();
         break;
+      case 'ping':
+        // The phone keeps an idle, logged-in connection waiting for the user's tap and pings it so nothing closes it.
+        break;
       case 'end':
         this.close();
         break;
@@ -264,7 +319,7 @@ class Session {
 
   private async start(m: Json) {
     if (this.started) return;
-    this.key = await loadSarvamKey();
+    this.key = await this.keyPromise;
     if (!this.key) return this.fail('Voice service is not configured.');
     this.started = true;
     this.system = String(m.system ?? '');
@@ -363,8 +418,19 @@ class Session {
           break;
       }
     };
+    ws.onopen = ((prev) => () => {
+      this.sttFailures = 0;
+      prev?.();
+    })(ws.onopen);
     ws.onclose = () => {
-      if (!this.closed && this.started) setTimeout(() => !this.closed && this.connectStt(), 300);
+      if (this.closed || !this.started) return;
+      // The phone shows "Listening" while this reconnects, so after a few failures in a row say so instead of pretending.
+      this.sttFailures += 1;
+      if (this.sttFailures >= 3) {
+        this.fail('Could not reach the speech recognition service. Please try again.');
+        return;
+      }
+      setTimeout(() => !this.closed && this.connectStt(), 300 * this.sttFailures);
     };
     ws.onerror = () => {};
   }
@@ -414,7 +480,14 @@ class Session {
     const ws = openSarvamSocket(TTS_URL, 'Api-Subscription-Key', this.key);
     this.tts = ws;
     const ready = new Promise<void>((resolve) => {
+      // A speech connection that fails or stalls must not leave the greeting and every later reply waiting for ever.
+      const giveUp = setTimeout(resolve, 5000);
+      ws.onerror = () => {
+        clearTimeout(giveUp);
+        resolve();
+      };
       ws.onopen = () => {
+        clearTimeout(giveUp);
         ws.send(
           JSON.stringify({
             type: 'config',
@@ -462,7 +535,6 @@ class Session {
         this.ttsReady = null;
       }
     };
-    ws.onerror = () => {};
     this.ttsReady = ready;
     return ready;
   }
@@ -545,6 +617,7 @@ class Session {
     this.inflight = 0;
     this.turnT0 = Date.now();
     this.firstAudioSent = false;
+    this.searchesThisTurn = 0;
 
     // Follow the language the user is actually speaking — unless they asked for one outright, in
     // which case that stands even if they say the next sentence in something else.
@@ -555,7 +628,8 @@ class Session {
 
     try {
       for (let hop = 0; hop < MAX_TOOL_HOPS; hop++) {
-        const { content, toolCalls } = await this.streamLlm(gen, abort.signal);
+        // The last hop may not call a tool: a turn must end with something said, not with a silent sixth lookup.
+        const { content, toolCalls } = await this.streamLlm(gen, abort.signal, hop === MAX_TOOL_HOPS - 1);
         if (gen !== this.gen) return;
         this.messages.push({
           role: 'assistant',
@@ -564,8 +638,25 @@ class Session {
         });
         if (!toolCalls.length) break;
 
+        // A web lookup takes a few seconds. If the model went straight to it without saying anything, say a short
+        // "one moment" (the first search of the turn) or "let me look a little further" (the second) so the user is
+        // not left in silence; and if it is still running after a while, say so once.
+        const searching = toolCalls.some((c) => c.name === 'web_search');
+        if (searching) {
+          this.searchesThisTurn += 1;
+          const filler = this.searchesThisTurn === 1 ? SEARCH_FILLER[this.ttsLang] ?? SEARCH_FILLER['en-IN'] : this.searchesThisTurn === 2 ? SEARCH_FILLER_MORE[this.ttsLang] : undefined;
+          if (!content && filler) this.say(filler, gen);
+        }
+        const stillTimer = searching
+          ? setTimeout(() => {
+              const line = SEARCH_STILL[this.ttsLang];
+              if (line && gen === this.gen && !this.closed) this.say(line, gen);
+            }, STILL_CHECKING_MS)
+          : null;
+
         // Run the tools on the phone and feed the results back to the model.
         const results = await Promise.all(toolCalls.map((c) => this.runToolOnPhone(c)));
+        if (stillTimer) clearTimeout(stillTimer);
         // Always record the results (even if interrupted) so the conversation never ends on a
         // tool call without an answer, which the model would choke on in the next turn.
         toolCalls.forEach((c, i) => this.messages.push({ role: 'tool', tool_call_id: c.id, content: JSON.stringify(results[i]) }));
@@ -581,6 +672,13 @@ class Session {
     } finally {
       if (this.abort === abort) this.abort = null;
     }
+  }
+
+  /** Shows a short line of the assistant's and speaks it. */
+  private say(text: string, gen: number) {
+    this.turnVisible = true;
+    this.send({ type: 'transcript', role: 'assistant', text, final: false });
+    void this.speak(text, gen);
   }
 
   private runToolOnPhone(call: ToolCall): Promise<unknown> {
@@ -599,24 +697,49 @@ class Session {
     });
   }
 
+  /**
+   * What the model is sent: the system prompt plus the most recent part of the conversation. A long chat made every hop
+   * slower for nothing, and old tool results (a whole screen read, a long document) were the bulk of it.
+   */
+  private modelMessages(): Json[] {
+    const [system, ...rest] = this.messages;
+    let recent = rest.length > MAX_CONTEXT_MESSAGES ? rest.slice(-MAX_CONTEXT_MESSAGES) : rest;
+    // A window must open on something the model can follow: never on a tool result whose call was cut away.
+    while (recent.length > 1 && recent[0].role !== 'user') recent = recent.slice(1);
+    let lastUser = -1;
+    recent.forEach((m, i) => {
+      if (m.role === 'user') lastUser = i;
+    });
+    const cap = (m: Json, i: number): Json => {
+      if (m.role !== 'tool' || typeof m.content !== 'string') return m;
+      const max = i > lastUser ? TOOL_RESULT_CHARS_NOW : TOOL_RESULT_CHARS_OLD;
+      return m.content.length > max ? { ...m, content: `${m.content.slice(0, max)}…` } : m;
+    };
+    return [system, ...recent.map(cap)];
+  }
+
   /** Streams one model response, speaking each finished sentence as soon as it exists. */
-  private async streamLlm(gen: number, signal: AbortSignal): Promise<{ content: string; toolCalls: ToolCall[] }> {
+  private async streamLlm(gen: number, signal: AbortSignal, lastHop = false): Promise<{ content: string; toolCalls: ToolCall[] }> {
     const t0 = Date.now();
-    const res = await fetch(CHAT_URL, {
+    const ask = (withTools: boolean) =>
+      fetch(CHAT_URL, {
       method: 'POST',
       signal,
       headers: { 'api-subscription-key': this.key, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: LLM_MODEL,
-        messages: this.messages,
-        tools: this.tools.length ? toOpenAiTools(this.tools) : undefined,
-        tool_choice: this.tools.length ? 'auto' : undefined,
+        messages: this.modelMessages(),
+        tools: withTools && this.tools.length ? toOpenAiTools(this.tools) : undefined,
+        tool_choice: withTools && this.tools.length ? (lastHop ? 'none' : 'auto') : undefined,
         temperature: 0.3,
-        max_tokens: 500,
-        reasoning_effort: 'low',
+        max_tokens: 1600,
+        ...(REASONING_EFFORT !== 'none' ? { reasoning_effort: REASONING_EFFORT } : {}),
         stream: true,
       }),
     });
+    // If the service does not accept tool_choice 'none' on the last hop, ask once more without any tools.
+    let res = await ask(true);
+    if (!res.ok && lastHop && this.tools.length) res = await ask(false);
     if (!res.ok || !res.body) throw new Error(`model error ${res.status}`);
 
     let content = '';
@@ -631,7 +754,11 @@ class Session {
       // Split off complete sentences from what has not been spoken yet.
       let rest = content.slice(spoken);
       for (;;) {
-        const m = rest.match(/^[\s\S]*?[.!?।\n]+(?=\s|$)/) ?? (rest.length > 140 ? rest.match(/^[\s\S]{60,140}?[,;:](?=\s)/) : null);
+        // The first piece of a reply may stop at the first comma after a few words, so the voice starts sooner.
+        const m =
+          rest.match(/^[\s\S]*?[.!?।\n]+(?=\s|$)/) ??
+          (rest.length > 140 ? rest.match(/^[\s\S]{60,140}?[,;:](?=\s)/) : null) ??
+          (spoken === 0 ? rest.match(/^[\s\S]{25,}?[,;:](?=\s)/) : null);
         if (!m) break;
         const sentence = m[0];
         spoken += sentence.length;
