@@ -25,9 +25,7 @@ import {
   Send,
   Users,
   Share2,
-  TrendingUp,
   Wallet,
-  Calendar,
   Crown,
   ChevronLeft,
   Settings,
@@ -115,7 +113,7 @@ const userNavItems = [
   },
   {
     title: "Wish a Friend",
-    url: "/celebrities",
+    url: "/wish-friend",
     icon: Users,
   },
   {
@@ -142,16 +140,6 @@ const userNavItems = [
     title: "Referrals",
     url: "/referrals",
     icon: Share2,
-  },
-  {
-    title: "Commission",
-    url: "/commission",
-    icon: TrendingUp,
-  },
-  {
-    title: "Occasions",
-    url: "/occasions",
-    icon: Calendar,
   },
   {
     title: "Occasion Alerts",

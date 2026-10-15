@@ -67,8 +67,8 @@ export default function Referrals() {
 
       if (!error && planData) {
         setCommissionRates({
-          l1: planData.referral_commission_l1 || 5,
-          l2: planData.referral_commission_l2 || 2,
+          l1: planData.referral_commission_l1 ?? 5,
+          l2: planData.referral_commission_l2 ?? 0,
           planName: planData.name
         });
       }

@@ -21,10 +21,14 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { BookingStatusBadge } from "@/components/booking/BookingStatusBadge";
 import { Textarea } from "@/components/ui/textarea";
 import BookingDetailsDialog from "@/components/admin/BookingDetailsDialog";
+import { WishFriendOrderDialog } from "@/components/admin/WishFriendOrderDialog";
+import { OrderDetailsList } from "@/components/admin/OrderDetailsList";
 import { format } from "date-fns";
 
 // Tab configuration - Approval required tabs first
 const ORDER_TABS = [
+  { id: "ugc-videos", label: "UGC Videos", icon: Megaphone, requiresApproval: true },
+  { id: "wish-friend", label: "Wish a Friend", icon: Heart, requiresApproval: true },
   { id: "video-bookings", label: "Video Wishes", icon: Video, requiresApproval: true },
   { id: "ugc-ads", label: "UGC Ads", icon: Megaphone, requiresApproval: true },
   { id: "image-promotions", label: "Image Promos", icon: ImageIcon, requiresApproval: true },
@@ -48,7 +52,9 @@ type TabDataState = {
 export default function AdminBookings() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [activeTab, setActiveTab] = useState("video-bookings");
+  const [activeTab, setActiveTab] = useState("ugc-videos");
+  const [selectedWishFriend, setSelectedWishFriend] = useState<any>(null);
+  const [wishFriendDialogOpen, setWishFriendDialogOpen] = useState(false);
   
   // Lazy-loaded data per tab
   const [tabData, setTabData] = useState<Record<string, TabDataState>>(() => {
@@ -94,6 +100,8 @@ export default function AdminBookings() {
         { count: musicCount },
         { count: occasionCount },
         { count: ugcCount },
+        { count: wishFriendCount },
+        { count: ugcVideoCount },
       ] = await Promise.all([
         supabase.from('bookings').select('*', { count: 'exact', head: true }),
         supabase.from('wish_celebrity_orders').select('*', { count: 'exact', head: true }),
@@ -104,6 +112,8 @@ export default function AdminBookings() {
         supabase.from('music_generations').select('*', { count: 'exact', head: true }),
         supabase.from('occasion_bookings').select('*', { count: 'exact', head: true }),
         supabase.from('ugc_ads').select('*', { count: 'exact', head: true }),
+        supabase.from('wish_friend_orders' as any).select('*', { count: 'exact', head: true }).eq('order_type', 'video_wish'),
+        supabase.from('wish_friend_orders' as any).select('*', { count: 'exact', head: true }).eq('order_type', 'ugc_video'),
       ]);
       
       setStats({
@@ -116,6 +126,8 @@ export default function AdminBookings() {
         'music-orders': musicCount || 0,
         'occasion-bookings': occasionCount || 0,
         'ugc-ads': ugcCount || 0,
+        'wish-friend': wishFriendCount || 0,
+        'ugc-videos': ugcVideoCount || 0,
       });
     } catch (error) {
       console.error('Error fetching stats:', error);
@@ -138,6 +150,15 @@ export default function AdminBookings() {
       let result: { data: any[] | null; count: number | null } = { data: null, count: null };
       
       switch (tabId) {
+        case 'wish-friend':
+        case 'ugc-videos':
+          result = await supabase
+            .from('wish_friend_orders' as any)
+            .select(`*, celebrities(name, image_url), profiles!wish_friend_orders_user_id_fkey(first_name, last_name, email)`, { count: 'exact' })
+            .eq('order_type', tabId === 'ugc-videos' ? 'ugc_video' : 'video_wish')
+            .order('created_at', { ascending: false })
+            .limit(PAGE_SIZE) as any;
+          break;
         case 'video-bookings':
           result = await supabase
             .from('bookings')
@@ -241,7 +262,7 @@ export default function AdminBookings() {
   // Initial load: stats + first tab + realtime subscription
   useEffect(() => {
     fetchStats();
-    fetchTabData('video-bookings');
+    fetchTabData('ugc-videos');
 
     // Subscribe to booking updates for real-time status changes
     const channel = supabase
@@ -535,6 +556,8 @@ export default function AdminBookings() {
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="pending">⏳ Pending</SelectItem>
+                <SelectItem value="processing">🛠 Processing</SelectItem>
+                <SelectItem value="rejected">🚫 Rejected</SelectItem>
                 <SelectItem value="confirmed">✅ Confirmed</SelectItem>
                 <SelectItem value="ready_to_send">🎥 Video Ready</SelectItem>
                 <SelectItem value="video_sent">📤 Video Sent</SelectItem>
@@ -563,6 +586,97 @@ export default function AdminBookings() {
             ))}
           </TabsList>
         </div>
+
+        {/* Wish a Friend tabs: video wishes and UGC videos (same table, split by order_type) */}
+        {[
+          { id: 'wish-friend', title: 'Wish a Friend: Video Wishes', hint: 'Video wish requests from Wish a Friend.' },
+          { id: 'ugc-videos', title: 'UGC Videos', hint: 'UGC video requests from Wish a Friend. Check the format, style and reference photo.' },
+        ].map((wfTab) => (
+        <TabsContent key={wfTab.id} value={wfTab.id}>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                {wfTab.title} ({filteredItems.length})
+                <Badge variant="destructive">Upload video to deliver</Badge>
+              </CardTitle>
+              <CardDescription>{wfTab.hint} Open one, upload the finished video, and it appears in the customer's My Orders.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {currentTabData.loading ? <TableSkeleton /> : (
+                <>
+                  <div className="block sm:hidden space-y-3">
+                    {filteredItems.map((order) => (
+                      <div key={order.id} className="p-3 border rounded-lg space-y-2">
+                        <div className="flex items-start justify-between">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-sm truncate">{getCustomerName(order)}</p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {order.order_type === 'ugc_video' ? 'UGC Video' : 'Video Wish'} for {order.recipient_name} · {order.occasion}
+                            </p>
+                          </div>
+                          {getStatusBadge(order.status)}
+                        </div>
+                        <div className="flex items-center justify-between text-xs">
+                          <span>{order.celebrities?.name || 'N/A'}</span>
+                          <span className="font-semibold">₹{order.price_paid?.toLocaleString()}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground">{format(new Date(order.created_at), 'PP')}</span>
+                          <Button variant={order.status === 'completed' ? "outline" : "default"} size="sm" className="h-7 text-xs"
+                            onClick={() => { setSelectedWishFriend(order); setWishFriendDialogOpen(true); }}>
+                            <Eye className="w-3 h-3 mr-1" /> {order.status === 'pending' || order.status === 'processing' ? 'Process' : 'View'}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                    {filteredItems.length === 0 && <div className="text-center text-muted-foreground py-8">No Wish a Friend orders found</div>}
+                  </div>
+                  <Table className="hidden sm:table">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Order ID</TableHead>
+                        <TableHead>Customer</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>For / Occasion</TableHead>
+                        <TableHead>Celebrity</TableHead>
+                        <TableHead>Price</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredItems.map((order) => (
+                        <TableRow key={order.id}>
+                          <TableCell className="font-mono text-sm">{order.id.substring(0, 8)}...</TableCell>
+                          <TableCell>{getCustomerName(order)}</TableCell>
+                          <TableCell><Badge variant="outline">{order.order_type === 'ugc_video' ? 'UGC Video' : 'Video Wish'}</Badge></TableCell>
+                          <TableCell className="max-w-[180px] truncate">{order.recipient_name} · {order.occasion}</TableCell>
+                          <TableCell>{order.celebrities?.name || 'N/A'}</TableCell>
+                          <TableCell>₹{order.price_paid?.toLocaleString()}</TableCell>
+                          <TableCell>{getStatusBadge(order.status)}</TableCell>
+                          <TableCell>{format(new Date(order.created_at), 'PP')}</TableCell>
+                          <TableCell>
+                            <Button variant={order.status === 'completed' ? "outline" : "default"} size="sm"
+                              onClick={() => { setSelectedWishFriend(order); setWishFriendDialogOpen(true); }}>
+                              <Eye className="w-4 h-4 mr-1" /> {order.status === 'pending' || order.status === 'processing' ? 'Process' : 'View'}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {filteredItems.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={9} className="text-center text-muted-foreground py-8">No Wish a Friend orders found</TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+        ))}
 
         {/* Video Bookings Tab */}
         <TabsContent value="video-bookings">
@@ -1315,6 +1429,14 @@ export default function AdminBookings() {
         </DialogContent>
       </Dialog>
 
+      <WishFriendOrderDialog
+        order={selectedWishFriend}
+        open={wishFriendDialogOpen}
+        onOpenChange={setWishFriendDialogOpen}
+        customerName={selectedWishFriend ? getCustomerName(selectedWishFriend) : ''}
+        onChanged={() => { fetchTabData(activeTab, true); fetchStats(); }}
+      />
+
       {/* UGC Ad Processing Dialog */}
       <Dialog open={ugcDialogOpen} onOpenChange={setUgcDialogOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -1407,6 +1529,8 @@ export default function AdminBookings() {
                   })()}
                 </CardContent>
               </Card>
+
+              <OrderDetailsList details={selectedUgcAd.order_details} />
 
               {/* Video Status / Input */}
               <Card className={selectedUgcAd.status === 'completed' ? 'border-green-500' : 'border-amber-500'}>

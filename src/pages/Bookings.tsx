@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"; // refreshed
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { AuthenticatedLayout } from "@/components/layout/AuthenticatedLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,13 +14,14 @@ import {
   Star, Clock, CheckCircle, XCircle, Video, Music, Gift, Calendar,
   Heart, ImageIcon, Download, Phone, CalendarClock, Volume2, Wand2, Mic, FileAudio
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { format } from "date-fns";
 
 const ITEMS_PER_PAGE = 20;
 
 const TAB_KEYS = [
-  'celebrity', 'wishes', 'greeting', 'photo', 'calls',
-  'music', 'image-music', 'tts', 'sfx', 'convert', 'isolate', 'occasion'
+  'celebrity', 'wish-friend', 'wishes', 'greeting', 'photo', 'calls',
+  'music', 'image-music', 'tts', 'sfx', 'convert', 'isolate'
 ] as const;
 type TabKey = typeof TAB_KEYS[number];
 
@@ -47,44 +48,14 @@ const parseBookingMessage = (message: string) => {
 export default function Bookings() {
   const { profile } = useAuth();
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<TabKey>('celebrity');
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab') as TabKey | null;
+  const initialTab: TabKey = tabParam && TAB_KEYS.includes(tabParam) ? tabParam : 'celebrity';
+  const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
   const [tabData, setTabData] = useState<Record<string, any[]>>({});
-  const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
   const [tabLoading, setTabLoading] = useState<Record<string, boolean>>({});
-  const [initialLoading, setInitialLoading] = useState(true);
   const loadedTabs = useRef<Set<string>>(new Set());
   const [previewImage, setPreviewImage] = useState<{ url: string; alt: string } | null>(null);
-
-  // Fetch lightweight counts for all tabs (head-only, no data)
-  const fetchAllCounts = useCallback(async () => {
-    if (!profile?.id) return;
-    const countQueries = [
-      { key: 'celebrity', table: 'bookings' as const },
-      { key: 'wishes', table: 'wish_celebrity_orders' as const },
-      { key: 'greeting', table: 'greeting_card_generations' as const },
-      { key: 'photo', table: 'photo_wishes' as const },
-      { key: 'calls', table: 'voice_call_wishes' as const },
-      { key: 'music', table: 'music_generations' as const },
-      { key: 'image-music', table: 'image_music_generations' as const },
-      { key: 'tts', table: 'tts_generations' as const },
-      { key: 'sfx', table: 'sound_effect_generations' as const },
-      { key: 'convert', table: 'voice_conversion_generations' as const },
-      { key: 'isolate', table: 'audio_isolation_generations' as const },
-      { key: 'occasion', table: 'occasion_bookings' as const },
-    ];
-
-    const results = await Promise.all(
-      countQueries.map(({ table }) =>
-        supabase.from(table).select('id', { count: 'exact', head: true }).eq('user_id', profile.id)
-      )
-    );
-
-    const counts: Record<string, number> = {};
-    countQueries.forEach((q, i) => {
-      counts[q.key] = results[i].count || 0;
-    });
-    setTabCounts(counts);
-  }, [profile?.id]);
 
   // Fetch data for a specific tab with selective columns
   const fetchTabData = useCallback(async (tab: TabKey, force = false) => {
@@ -99,6 +70,11 @@ export default function Bookings() {
         case 'celebrity':
           result = await supabase.from('bookings')
             .select('id, status, service_type, created_at, message, final_price, video_url, video_file_key, generation_status, video_status, video_sent_at, celebrities:celebrity_id (name, image_url, category)')
+            .eq('user_id', profile.id).order('created_at', { ascending: false }).limit(ITEMS_PER_PAGE);
+          break;
+        case 'wish-friend':
+          result = await supabase.from('wish_friend_orders' as any)
+            .select('id, order_type, status, recipient_name, occasion, relationship, tone, prompt, price_paid, video_url, video_file_key, admin_notes, created_at, completed_at, celebrities:celebrity_id (name, image_url)')
             .eq('user_id', profile.id).order('created_at', { ascending: false }).limit(ITEMS_PER_PAGE);
           break;
         case 'wishes':
@@ -151,11 +127,6 @@ export default function Bookings() {
             .select('id, status, original_file_name, audio_url, created_at, credits_used')
             .eq('user_id', profile.id).order('created_at', { ascending: false }).limit(ITEMS_PER_PAGE);
           break;
-        case 'occasion':
-          result = await supabase.from('occasion_bookings')
-            .select('id, status, recipient_name, message, price, created_at, celebrities:celebrity_id (name, image_url), occasions:occasion_id (name)')
-            .eq('user_id', profile.id).order('created_at', { ascending: false }).limit(ITEMS_PER_PAGE);
-          break;
       }
 
       if (result?.error) throw result.error;
@@ -163,20 +134,17 @@ export default function Bookings() {
       loadedTabs.current.add(tab);
     } catch (error: any) {
       toast({ title: "Error loading data", description: error.message, variant: "destructive" });
+      setTabData(prev => ({ ...prev, [tab]: prev[tab] ?? [] }));
     } finally {
       setTabLoading(prev => ({ ...prev, [tab]: false }));
     }
   }, [profile?.id, toast]);
 
-  // Initial load: counts + first tab
+  // Initial load: only the tab that is open. Other tabs load when they are opened.
   useEffect(() => {
     if (!profile?.id) return;
-    const init = async () => {
-      await Promise.all([fetchAllCounts(), fetchTabData('celebrity')]);
-      setInitialLoading(false);
-    };
-    init();
-  }, [profile?.id, fetchAllCounts, fetchTabData]);
+    fetchTabData(initialTab);
+  }, [profile?.id, fetchTabData]);
 
   // Realtime: targeted refetch
   useEffect(() => {
@@ -189,7 +157,6 @@ export default function Bookings() {
         () => {
           loadedTabs.current.delete('celebrity');
           if (activeTab === 'celebrity') fetchTabData('celebrity', true);
-          fetchAllCounts();
         }
       ).subscribe();
 
@@ -200,15 +167,25 @@ export default function Bookings() {
         () => {
           loadedTabs.current.delete('music');
           if (activeTab === 'music') fetchTabData('music', true);
-          fetchAllCounts();
+        }
+      ).subscribe();
+
+    const wishFriendChannel = supabase
+      .channel(`wish_friend_updates_${profile.id}`)
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'wish_friend_orders', filter: `user_id=eq.${profile.id}` },
+        () => {
+          loadedTabs.current.delete('wish-friend');
+          if (activeTab === 'wish-friend') fetchTabData('wish-friend', true);
         }
       ).subscribe();
 
     return () => {
       supabase.removeChannel(bookingChannel);
       supabase.removeChannel(musicChannel);
+      supabase.removeChannel(wishFriendChannel);
     };
-  }, [profile?.id, activeTab, fetchTabData, fetchAllCounts]);
+  }, [profile?.id, activeTab, fetchTabData]);
 
   // Lazy load tab data on tab change
   const handleTabChange = useCallback((tab: string) => {
@@ -216,9 +193,10 @@ export default function Bookings() {
     fetchTabData(tab as TabKey);
   }, [fetchTabData]);
 
-  const getCount = (tab: string) => tabCounts[tab] ?? (tabData[tab]?.length ?? 0);
+  // Counts are only known for tabs that have been opened; nothing is queried up front.
+  const getCount = (tab: string): number | null => (tabData[tab] ? tabData[tab].length : null);
   const getData = (tab: string): any[] => tabData[tab] || [];
-  const isTabLoading = (tab: string) => tabLoading[tab] && !tabData[tab]?.length;
+  const isTabLoading = (tab: string) => tabData[tab] === undefined;
 
   const getStatusIcon = (status: string) => {
     switch (status?.toLowerCase()) {
@@ -283,71 +261,87 @@ export default function Bookings() {
     return labels[type] || type;
   };
 
-  // Tab loading spinner
+  // Loading placeholder shown while the open tab fetches
   const TabSpinner = () => (
-    <div className="flex items-center justify-center py-12">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+    <div className="space-y-3">
+      {[0, 1, 2].map(i => (
+        <Card key={i} className="overflow-hidden">
+          <CardContent className="p-4 md:p-6 flex gap-4 animate-pulse">
+            <div className="w-16 h-16 md:w-20 md:h-20 rounded-xl bg-muted" />
+            <div className="flex-1 space-y-3 py-1">
+              <div className="h-4 w-2/3 rounded bg-muted" />
+              <div className="h-3 w-1/2 rounded bg-muted" />
+              <div className="h-3 w-1/3 rounded bg-muted" />
+            </div>
+          </CardContent>
+        </Card>
+      ))}
     </div>
   );
 
-  if (initialLoading) {
-    return (
-      <AuthenticatedLayout>
-        <div className="container mx-auto py-8 px-4 max-w-6xl">
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-          </div>
-        </div>
-      </AuthenticatedLayout>
-    );
-  }
-
-  const tabConfig: { key: TabKey; label: string; mobileLabel: string }[] = [
-    { key: 'celebrity', label: 'Celebrity', mobileLabel: 'Celebrity' },
-    { key: 'wishes', label: 'Wishes', mobileLabel: 'Wishes' },
-    { key: 'greeting', label: 'Cards', mobileLabel: 'Cards' },
-    { key: 'photo', label: 'Photo', mobileLabel: 'Photo' },
-    { key: 'calls', label: 'Calls', mobileLabel: 'Calls' },
-    { key: 'music', label: 'Music', mobileLabel: 'Music' },
-    { key: 'image-music', label: 'Img+Music', mobileLabel: 'Img+Music' },
-    { key: 'tts', label: 'TTS', mobileLabel: 'TTS' },
-    { key: 'sfx', label: 'SFX', mobileLabel: 'SFX' },
-    { key: 'convert', label: 'Convert', mobileLabel: 'Convert' },
-    { key: 'isolate', label: 'Isolate', mobileLabel: 'Isolate' },
-    { key: 'occasion', label: 'Occasions', mobileLabel: 'Occasions' },
+  const tabConfig: { key: TabKey; label: string; mobileLabel: string; icon: LucideIcon }[] = [
+    { key: 'celebrity', label: 'Celebrity', mobileLabel: 'Celebrity', icon: Star },
+    { key: 'wish-friend', label: 'Wish a Friend', mobileLabel: 'Wish a Friend', icon: Heart },
+    { key: 'wishes', label: 'Wishes', mobileLabel: 'Wishes', icon: Gift },
+    { key: 'greeting', label: 'Greeting Cards', mobileLabel: 'Cards', icon: ImageIcon },
+    { key: 'photo', label: 'Photo Wishes', mobileLabel: 'Photo', icon: Wand2 },
+    { key: 'calls', label: 'Calls', mobileLabel: 'Calls', icon: Phone },
+    { key: 'music', label: 'AI Music', mobileLabel: 'Music', icon: Music },
+    { key: 'image-music', label: 'Image + Music', mobileLabel: 'Img+Music', icon: ImageIcon },
+    { key: 'tts', label: 'Text to Speech', mobileLabel: 'TTS', icon: Volume2 },
+    { key: 'sfx', label: 'Sound Effects', mobileLabel: 'SFX', icon: FileAudio },
+    { key: 'convert', label: 'Voice Convert', mobileLabel: 'Convert', icon: Mic },
+    { key: 'isolate', label: 'Audio Isolate', mobileLabel: 'Isolate', icon: Volume2 },
   ];
 
   return (
     <AuthenticatedLayout>
       <div className="container mx-auto py-4 md:py-8 px-3 md:px-4 max-w-6xl mobile-safe-bottom pb-20 md:pb-8">
-        <div className="mb-6 md:mb-8">
+        <div className="mb-5 md:mb-8">
           <h1 className="text-2xl md:text-4xl font-bold mb-1 md:mb-2 flex items-center gap-2 md:gap-3">
-            <Calendar className="w-6 h-6 md:w-10 md:h-10" />
+            <Calendar className="w-6 h-6 md:w-10 md:h-10 text-primary" />
             My Bookings
           </h1>
-          <p className="text-sm md:text-base text-muted-foreground">View all your orders and generations</p>
+          <p className="text-sm md:text-base text-muted-foreground">Everything you ordered, in one place. Pick a section to open it.</p>
         </div>
 
-        <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4 md:space-y-6">
+        <Tabs value={activeTab} onValueChange={handleTabChange} orientation="vertical" className="md:grid md:grid-cols-[240px_minmax(0,1fr)] md:gap-6 md:items-start space-y-4 md:space-y-0">
           {/* Mobile: horizontally scrollable pill tabs */}
           <div className="md:hidden -mx-3 px-3">
             <TabsList className="inline-flex w-max h-auto gap-2 p-1.5 bg-transparent overflow-x-auto no-scrollbar">
-              {tabConfig.map(t => (
-                <TabsTrigger key={t.key} value={t.key} className="shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium border border-border/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary bg-muted/30">
-                  {t.mobileLabel} ({getCount(t.key)})
-                </TabsTrigger>
-              ))}
+              {tabConfig.map(t => {
+                const count = getCount(t.key);
+                return (
+                  <TabsTrigger key={t.key} value={t.key} className="shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium border border-border/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary bg-muted/30">
+                    {t.mobileLabel}{count ? ` (${count})` : ''}
+                  </TabsTrigger>
+                );
+              })}
             </TabsList>
           </div>
 
-          {/* Desktop: standard wrapped tabs */}
-          <TabsList className="hidden md:flex flex-wrap w-full h-auto gap-1 justify-start">
-            {tabConfig.map(t => (
-              <TabsTrigger key={t.key} value={t.key} className="text-sm py-2.5">
-                {t.label} ({getCount(t.key)})
-              </TabsTrigger>
-            ))}
-          </TabsList>
+          {/* Desktop: sidebar with every section; only the open one is loaded */}
+          <aside className="hidden md:block sticky top-24">
+            <TabsList className="flex flex-col h-auto w-full gap-1 bg-card border rounded-2xl p-2 justify-start">
+              {tabConfig.map(t => {
+                const Icon = t.icon;
+                const count = getCount(t.key);
+                return (
+                  <TabsTrigger
+                    key={t.key}
+                    value={t.key}
+                    className="w-full justify-start gap-3 rounded-xl px-3 py-2.5 text-sm font-medium data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md hover:bg-muted/60"
+                  >
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span className="flex-1 text-left truncate">{t.label}</span>
+                    {count ? <span className="text-xs rounded-full bg-background/20 px-2 py-0.5">{count}</span> : null}
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
+          </aside>
+
+          <div className="min-w-0 space-y-3 md:space-y-4">
 
           {/* Celebrity Bookings Tab */}
           <TabsContent value="celebrity" className="space-y-3 md:space-y-4">
@@ -468,6 +462,81 @@ export default function Bookings() {
                     </CardContent>
                   </Card>
                 ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Wish a Friend Tab (video wishes + UGC videos made by our team) */}
+          <TabsContent value="wish-friend" className="space-y-3 md:space-y-4">
+            {isTabLoading('wish-friend') ? <TabSpinner /> : getData('wish-friend').length === 0 ? (
+              <Card><CardContent className="text-center py-8 md:py-12">
+                <Video className="w-10 h-10 md:w-12 md:h-12 mx-auto mb-3 md:mb-4 text-muted-foreground" />
+                <p className="text-sm md:text-base text-muted-foreground">No Wish a Friend orders yet</p>
+                <Link to="/wish-friend"><Badge className="mt-3 md:mt-4 cursor-pointer text-xs md:text-sm">Wish a Friend</Badge></Link>
+              </CardContent></Card>
+            ) : (
+              <div className="space-y-3 md:space-y-4">
+                {getData('wish-friend').map((order: any) => {
+                  const done = order.status === 'completed' && (order.video_file_key || order.video_url);
+                  const statusLabel: Record<string, string> = {
+                    pending: 'Request received', processing: 'Being made', completed: 'Delivered', rejected: 'Rejected',
+                  };
+                  return (
+                    <Card key={order.id} className="overflow-hidden">
+                      <CardContent className="p-3 md:p-6">
+                        <div className="flex flex-col sm:flex-row items-start gap-3 md:gap-4">
+                          <img src={order.celebrities?.image_url || '/placeholder.svg'} alt={order.celebrities?.name} className="w-full sm:w-16 md:w-20 h-32 sm:h-16 md:h-20 rounded-lg object-cover" />
+                          <div className="flex-1 w-full">
+                            <div className="flex items-start justify-between mb-2 gap-2">
+                              <div className="flex-1 min-w-0">
+                                <h3 className="font-semibold text-base md:text-lg truncate">{order.order_type === 'ugc_video' ? 'UGC Video' : 'Video Wish'} · {order.celebrities?.name}</h3>
+                                <p className="text-xs md:text-sm text-muted-foreground">For {order.recipient_name} · {order.occasion}</p>
+                              </div>
+                              <Badge variant={order.status === 'rejected' ? 'destructive' : order.status === 'completed' ? 'default' : 'secondary'}>
+                                {statusLabel[order.status] || order.status}
+                              </Badge>
+                            </div>
+                            <div className="text-muted-foreground mt-2 p-2 md:p-3 bg-muted rounded-lg">
+                              <p className="font-medium mb-1 text-xs md:text-sm">Your prompt:</p>
+                              <p className="text-xs md:text-sm line-clamp-3">{order.prompt}</p>
+                            </div>
+                            {done && (
+                              <div className="mt-3 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg space-y-2">
+                                <div className="flex items-center gap-2 text-sm font-medium text-green-700 dark:text-green-300">
+                                  <CheckCircle className="w-4 h-4" /><span>Your Video is Ready!</span>
+                                </div>
+                                <B2VideoPlayer fileKey={order.video_file_key || order.video_url} fallbackUrl={order.video_url} className="w-full rounded-lg" />
+                                {order.video_url && (
+                                  <a href={order.video_url} download target="_blank" rel="noreferrer" className="flex items-center gap-1 text-primary hover:underline text-xs md:text-sm"><Download className="w-3.5 h-3.5" />Download</a>
+                                )}
+                              </div>
+                            )}
+                            {(order.status === 'pending' || order.status === 'processing') && (
+                              <div className="mt-3 p-3 bg-primary/5 border border-primary/20 rounded-lg text-xs md:text-sm text-muted-foreground">
+                                Our team is working on your video. It will appear here once it is ready.
+                              </div>
+                            )}
+                            {order.status === 'rejected' && (
+                              <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-xs md:text-sm">
+                                {order.admin_notes || 'We could not make this video. Please contact support for a refund.'}
+                              </div>
+                            )}
+                            <div className="flex items-center justify-between mt-3 md:mt-4 pt-3 md:pt-4 border-t gap-3">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[10px] md:text-xs text-muted-foreground">Order ID · {format(new Date(order.created_at), 'PP')}</p>
+                                <p className="text-xs md:text-sm font-mono truncate">{order.id.slice(0, 8)}</p>
+                              </div>
+                              <div className="text-right flex-shrink-0">
+                                <p className="text-[10px] md:text-xs text-muted-foreground">Amount</p>
+                                <p className="text-base md:text-lg font-bold">₹{(order.price_paid || 0).toLocaleString()}</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             )}
           </TabsContent>
@@ -873,45 +942,7 @@ export default function Bookings() {
             )}
           </TabsContent>
 
-          {/* Occasion Bookings Tab */}
-          <TabsContent value="occasion" className="space-y-3 md:space-y-4">
-            {isTabLoading('occasion') ? <TabSpinner /> : getData('occasion').length === 0 ? (
-              <Card><CardContent className="text-center py-8 md:py-12">
-                <Gift className="w-10 h-10 md:w-12 md:h-12 mx-auto mb-3 md:mb-4 text-muted-foreground" />
-                <p className="text-sm md:text-base text-muted-foreground">No occasion bookings yet</p>
-                <Link to="/occasions"><Badge className="mt-3 md:mt-4 cursor-pointer text-xs md:text-sm">Browse Occasions</Badge></Link>
-              </CardContent></Card>
-            ) : (
-              <div className="space-y-3 md:space-y-4">
-                {getData('occasion').map((occasion: any) => (
-                  <Card key={occasion.id} className="overflow-hidden">
-                    <CardContent className="p-3 md:p-6">
-                      <div className="flex flex-col sm:flex-row items-start gap-3 md:gap-4">
-                        <img src={occasion.celebrities?.image_url || '/placeholder.svg'} alt={occasion.celebrities?.name} className="w-full sm:w-16 md:w-20 h-32 sm:h-16 md:h-20 rounded-lg object-cover" />
-                        <div className="flex-1 w-full">
-                          <div className="flex items-start justify-between mb-2 gap-2">
-                            <div className="flex-1 min-w-0">
-                              <h3 className="font-semibold text-base md:text-lg truncate">{occasion.occasions?.name}</h3>
-                              <p className="text-xs md:text-sm text-muted-foreground truncate">Celebrity: {occasion.celebrities?.name}</p>
-                            </div>
-                            {getStatusBadge(occasion.status)}
-                          </div>
-                          <div className="space-y-1.5 md:space-y-2 text-xs md:text-sm">
-                            <div><span className="text-muted-foreground">Recipient:</span> {occasion.recipient_name}</div>
-                            {occasion.message && (<div className="text-muted-foreground mt-2 p-2 md:p-3 bg-muted rounded-lg"><p className="font-medium mb-1 text-xs md:text-sm">Message:</p><p className="text-xs md:text-sm line-clamp-2">{occasion.message}</p></div>)}
-                          </div>
-                          <div className="flex items-center justify-between mt-3 md:mt-4 pt-3 md:pt-4 border-t gap-3">
-                            <div className="flex items-center gap-1.5 md:gap-2 flex-1 min-w-0"><Calendar className="w-3.5 h-3.5 md:w-4 md:h-4 text-muted-foreground flex-shrink-0" /><span className="text-xs md:text-sm truncate">{format(new Date(occasion.created_at), 'PP')}</span></div>
-                            <div className="text-right flex-shrink-0"><p className="text-base md:text-lg font-bold">₹{occasion.price.toLocaleString()}</p></div>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </TabsContent>
+          </div>
         </Tabs>
       </div>
 

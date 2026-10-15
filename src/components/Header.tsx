@@ -47,6 +47,7 @@ const servicesItems: { label: string; icon: LucideIcon; path: string; badge?: st
   { label: "Hotels", icon: Hotel, path: "/travel/hotels" },
   { label: "Bus", icon: Bus, path: "/travel/bus" },
   { label: "My Trips", icon: Plane, path: "/travel/trips" },
+  { label: "Wish a Friend", icon: Heart, path: "/wish-friend" },
   { label: "Video Wishes", icon: Video, path: "/celebrities" },
   { label: "Celebrity Calls", icon: Phone, path: "/celebrity-voice-call" },
   { label: "AI Voice Calls", icon: Mic2, path: "/voice-call-wish" },

@@ -64,10 +64,10 @@ const Wallet = lazyRetry(() => import("./pages/superapp/WalletOverview"));
 const WalletLegacy = lazyRetry(() => import("./pages/Wallet"));
 const BillPayFlow = lazyRetry(() => import("./pages/superapp/BillPayFlow"));
 const RechargePage = lazyRetry(() => import("./pages/superapp/RechargePage"));
-const Commission = lazyRetry(() => import("./pages/Commission"));
 const GreetingCards = lazyRetry(() => import("./pages/GreetingCards"));
 const ImagePromotions = lazyRetry(() => import("./pages/ImagePromotions"));
 const UGCVideos = lazyRetry(() => import("./pages/UGCVideos"));
+const WishFriend = lazyRetry(() => import("./pages/WishFriend"));
 const UGCAds = lazyRetry(() => import("./pages/UGCAds"));
 const OccasionWishes = lazyRetry(() => import("./pages/OccasionWishes"));
 const Messages = lazyRetry(() => import("./pages/Messages"));
@@ -259,10 +259,11 @@ const App = () => {
             <Route path="/wallet/legacy" element={<WalletLegacy />} />
             <Route path="/bills/pay" element={<BillPayFlow />} />
             <Route path="/recharge" element={<RechargePage />} />
-            <Route path="/commission" element={<Commission />} />
+            <Route path="/commission" element={<Navigate to="/dashboard" replace />} />
             <Route path="/greeting-cards" element={<GreetingCards />} />
             <Route path="/image-promotions" element={<ImagePromotions />} />
             <Route path="/ugc-videos" element={<UGCVideos />} />
+            <Route path="/wish-friend" element={<WishFriend />} />
             <Route path="/ugc-ads" element={<UGCAds />} />
             <Route path="/occasion-wishes" element={<OccasionWishes />} />
           <Route path="/messages" element={<Messages />} />
