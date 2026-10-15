@@ -67,11 +67,11 @@ export default function Commission() {
     }
   }, [profile?.id, startDate, endDate]);
 
-  const fetchCommissionData = async () => {
+  const fetchCommissionData = async (filterStart = startDate, filterEnd = endDate) => {
     try {
       setLoading(true);
 
-      // Build query with date filters
+      // 1. Fetch referral transactions for current user
       let referralQuery = supabase
         .from('referral_transactions')
         .select('*')
@@ -79,35 +79,55 @@ export default function Commission() {
         .eq('status', 'completed')
         .order('created_at', { ascending: false });
 
-      let celebrityQuery = supabase
-        .from('celebrity_wallet_transactions')
-        .select('*')
-        .eq('celebrity_id', profile?.id)
-        .eq('transaction_type', 'earning')
-        .order('created_at', { ascending: false });
-
-      if (startDate) {
-        referralQuery = referralQuery.gte('created_at', startDate);
-        celebrityQuery = celebrityQuery.gte('created_at', startDate);
+      if (filterStart) {
+        referralQuery = referralQuery.gte('created_at', filterStart);
       }
-      if (endDate) {
-        referralQuery = referralQuery.lte('created_at', endDate);
-        celebrityQuery = celebrityQuery.lte('created_at', endDate);
+      if (filterEnd) {
+        referralQuery = referralQuery.lte('created_at', filterEnd);
       }
 
       const { data: refData, error: refError } = await referralQuery;
-      const { data: celData, error: celError } = await celebrityQuery;
-
       if (refError) throw refError;
-      if (celError) throw celError;
+
+      // 2. Resolve celebrity ID from celebrities table using profile.id
+      let celData: any[] = [];
+      const { data: celebrityRecord, error: celebrityLookupError } = await supabase
+        .from('celebrities')
+        .select('id')
+        .eq('profile_id', profile?.id)
+        .maybeSingle();
+
+      if (celebrityLookupError) {
+        console.warn('Could not query celebrity profile:', celebrityLookupError);
+      }
+
+      if (celebrityRecord?.id) {
+        let celebrityQuery = supabase
+          .from('celebrity_wallet_transactions')
+          .select('*')
+          .eq('celebrity_id', celebrityRecord.id)
+          .eq('transaction_type', 'earning')
+          .order('created_at', { ascending: false });
+
+        if (filterStart) {
+          celebrityQuery = celebrityQuery.gte('created_at', filterStart);
+        }
+        if (filterEnd) {
+          celebrityQuery = celebrityQuery.lte('created_at', filterEnd);
+        }
+
+        const { data: cData, error: celError } = await celebrityQuery;
+        if (celError) throw celError;
+        celData = cData || [];
+      }
 
       setReferralCommissions(refData || []);
-      setCelebrityCommissions(celData || []);
+      setCelebrityCommissions(celData);
 
       // Calculate totals
       const refTotal = (refData || []).reduce((sum, tx) => sum + (tx.commission_amount || 0), 0);
-      const celTotal = (celData || []).reduce((sum, tx) => sum + (tx.amount || 0), 0);
-      const tdsTotal = (celData || []).reduce((sum, tx) => sum + (tx.tds_amount || 0), 0);
+      const celTotal = celData.reduce((sum, tx) => sum + (tx.amount || 0), 0);
+      const tdsTotal = celData.reduce((sum, tx) => sum + (tx.tds_amount || 0), 0);
 
       setTotalReferralEarned(refTotal);
       setTotalCelebrityEarned(celTotal);
@@ -123,43 +143,10 @@ export default function Commission() {
     }
   };
 
-  const handleClearFilters = async () => {
+  const handleClearFilters = () => {
     setStartDate("");
     setEndDate("");
-    // Manually re-fetch data without filters
-    try {
-      setLoading(true);
-      
-      const { data: refData } = await supabase
-        .from('referral_transactions')
-        .select('*')
-        .eq('referrer_id', profile?.id)
-        .eq('status', 'completed')
-        .order('created_at', { ascending: false });
-
-      const { data: celData } = await supabase
-        .from('celebrity_wallet_transactions')
-        .select('*')
-        .eq('celebrity_id', profile?.id)
-        .eq('transaction_type', 'earning')
-        .order('created_at', { ascending: false });
-
-      setReferralCommissions(refData || []);
-      setCelebrityCommissions(celData || []);
-
-      // Recalculate totals
-      const refTotal = (refData || []).reduce((sum, tx) => sum + (tx.commission_amount || 0), 0);
-      const celTotal = (celData || []).reduce((sum, tx) => sum + (tx.amount || 0), 0);
-      const tdsTotal = (celData || []).reduce((sum, tx) => sum + (tx.tds_amount || 0), 0);
-
-      setTotalReferralEarned(refTotal);
-      setTotalCelebrityEarned(celTotal);
-      setTotalTdsDeducted(tdsTotal);
-    } catch (error) {
-      console.error('Error clearing filters:', error);
-    } finally {
-      setLoading(false);
-    }
+    fetchCommissionData("", "");
   };
 
   return (

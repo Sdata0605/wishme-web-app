@@ -14,7 +14,7 @@ serve(async (req) => {
   try {
     const VAPI_API_KEY = Deno.env.get('VAPI_API_KEY');
     const DEFAULT_PHONE_NUMBER_ID = Deno.env.get('VAPI_PHONE_NUMBER_ID');
-    
+
     if (!VAPI_API_KEY) {
       throw new Error('VAPI_API_KEY not configured');
     }
@@ -59,14 +59,14 @@ serve(async (req) => {
     }
 
     // Parse request body
-    const { 
-      recipientName, 
-      recipientPhone, 
-      occasion, 
-      senderName, 
-      celebrityId, 
-      celebrityName, 
-      voiceId, 
+    const {
+      recipientName,
+      recipientPhone,
+      occasion,
+      senderName,
+      celebrityId,
+      celebrityName,
+      voiceId,
       price,
       celebrityPhoneId,
       // Enhanced fields
@@ -100,7 +100,7 @@ serve(async (req) => {
           const elBody = await elResponse.text();
           console.error('Voice validation failed:', elResponse.status, elBody);
           return new Response(
-            JSON.stringify({ 
+            JSON.stringify({
               error: `Invalid voice ID "${cleanVoiceId}". This voice was not found in your ElevenLabs account. Please update the celebrity's voice ID in Admin → Celebrity Edit.`,
               voiceValidationFailed: true
             }),
@@ -166,18 +166,18 @@ serve(async (req) => {
       'casual': 'casual and friendly',
       'emotional': 'emotional and heartfelt'
     };
-    
+
     const toneStyle = tone ? toneDescriptions[tone] || 'warm and friendly' : 'warm and friendly';
-    
+
     // Map relationship for context
     const relationshipContext = relationship ? `${recipientName} is ${senderName}'s ${relationship}.` : '';
-    
+
     // Build custom message section
     const customMessageSection = customMessage ? `\n\nIMPORTANT - Include these specific things in your message:\n${customMessage}` : '';
-    
+
     // Build things to avoid section
     const avoidSection = thingsToAvoid ? `\n\nIMPORTANT - DO NOT mention or talk about:\n${thingsToAvoid}` : '';
-    
+
     // Build additional context section
     const contextSection = additionalContext ? `\n\nAdditional context about ${recipientName}:\n${additionalContext}` : '';
 
@@ -277,16 +277,16 @@ Keep the call friendly, engaging, and memorable. Speak naturally and with warmth
       assistant: {
         // CRITICAL: Set assistant to speak first on outbound calls
         firstMessageMode: "assistant-speaks-first",
-        
+
         firstMessage: nativeFirstMessage,
-        
+
         // CRITICAL: Add transcriber for speech recognition - allows AI to hear the caller
         transcriber: {
           provider: "deepgram",
           model: "nova-2",
           language: transcriptionLanguage
         },
-        
+
         model: {
           provider: "openai",
           model: "gpt-4o-mini",
@@ -297,7 +297,7 @@ Keep the call friendly, engaging, and memorable. Speak naturally and with warmth
             }
           ]
         },
-        
+
         // CRITICAL: Complete voice configuration with ElevenLabs settings
         // Higher stability (0.75) for non-English eliminates singing/pitch swings
         // style: 0 for non-English prevents over-dramatization
@@ -313,14 +313,14 @@ Keep the call friendly, engaging, and memorable. Speak naturally and with warmth
           optimizeStreamingLatency: isEnglish ? 3 : 2,
           language: elevenLabsLanguageCodes[selectedLang] || undefined
         },
-        
+
         // CRITICAL: Silence and timeout configurations to prevent premature disconnection
         silenceTimeoutSeconds: 60,
         maxDurationSeconds: 180,
-        
+
         // Background sound for natural phone call experience
         backgroundSound: "office",
-        
+
         // End call configuration
         endCallMessage: nativeEndCallMessage,
         endCallPhrases: ["goodbye", "bye bye", "take care", "thank you bye", "ok bye"]
@@ -332,7 +332,7 @@ Keep the call friendly, engaging, and memorable. Speak naturally and with warmth
     // Check if this is a scheduled call
     if (scheduledAt) {
       console.log('Scheduling call for:', scheduledAt);
-      
+
       // Deduct from wallet immediately (payment upfront)
       const { error: walletError } = await supabase
         .from('profiles')
@@ -393,11 +393,11 @@ Keep the call friendly, engaging, and memorable. Speak naturally and with warmth
       } catch (e) { console.warn('Notification error:', e); }
 
       return new Response(
-        JSON.stringify({ 
-          success: true, 
+        JSON.stringify({
+          success: true,
           scheduled: true,
           scheduledAt: scheduledAt,
-          message: `Call scheduled for ${recipientName}` 
+          message: `Call scheduled for ${recipientName}`
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -433,12 +433,12 @@ Keep the call friendly, engaging, and memorable. Speak naturally and with warmth
     }
 
     const callData = JSON.parse(vapiResponseText);
-    
+
     // Check for provider/voice errors in successful response
     if (callData.error || callData.message) {
       console.error('Vapi returned error in response body:', callData.error || callData.message);
     }
-    
+
     console.log('Vapi call initiated successfully:', { callId: callData.id, status: callData.status, voiceId });
 
     // Deduct from wallet
@@ -476,10 +476,10 @@ Keep the call friendly, engaging, and memorable. Speak naturally and with warmth
     });
 
     return new Response(
-      JSON.stringify({ 
-        success: true, 
+      JSON.stringify({
+        success: true,
         callId: callData.id,
-        message: `Call initiated to ${recipientName}` 
+        message: `Call initiated to ${recipientName}`
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

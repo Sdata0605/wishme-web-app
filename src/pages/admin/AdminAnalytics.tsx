@@ -86,7 +86,7 @@ export default function AdminAnalytics() {
         supabase.from('voice_call_wishes').select('*', { count: 'exact', head: true }),
         supabase.from('photo_wishes').select('*', { count: 'exact', head: true }),
         supabase.from('profiles').select('wallet_balance'),
-        supabase.from('celebrity_wallet_transactions').select('amount').eq('transaction_type', 'commission'),
+        supabase.from('celebrity_wallet_transactions').select('amount').in('transaction_type', ['earning', 'commission']),
         supabase.from('profiles').select('*', { count: 'exact', head: true }).gte('created_at', prevMonthStart).lt('created_at', prevMonthEnd),
       ]);
 

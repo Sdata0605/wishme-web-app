@@ -111,7 +111,7 @@ export default function CelebrityDashboard() {
       
       // Fetch real stats
       if (data?.id) {
-        await fetchStats(data.id);
+        await fetchStats(data.id, data);
       }
     } catch (error) {
       console.error('Error fetching celebrity data:', error);
@@ -129,8 +129,9 @@ export default function CelebrityDashboard() {
     }
   };
 
-  const fetchStats = async (celebrityId: string) => {
+  const fetchStats = async (celebrityId: string, celebRecord?: any) => {
     try {
+      const activeCeleb = celebRecord || celebrity;
       // Fetch bookings count and total earnings
       const { data: bookingsData, error: bookingsError } = await supabase
         .from('bookings')
@@ -142,15 +143,25 @@ export default function CelebrityDashboard() {
       const completedBookings = bookingsData?.filter(b => b.status === 'completed') || [];
       const pendingBookings = bookingsData?.filter(b => b.status === 'pending' || b.status === 'in_progress') || [];
       
-      const totalEarnings = completedBookings.reduce((sum, b) => sum + (b.celebrity_commission || 0), 0);
+      const totalBookingsEarnings = completedBookings.reduce((sum, b) => sum + (b.celebrity_commission || 0), 0);
       const pendingEarnings = pendingBookings.reduce((sum, b) => sum + (b.celebrity_commission || 0), 0);
 
+      // Fetch all ledger earnings (voice calls, bookings, subscriptions, etc.)
+      const { data: txData } = await supabase
+        .from('celebrity_wallet_transactions')
+        .select('amount')
+        .eq('celebrity_id', celebrityId)
+        .eq('transaction_type', 'earning');
+
+      const txEarnings = (txData || []).reduce((sum, tx) => sum + (tx.amount || 0), 0);
+      const effectiveTotalEarnings = Math.max(activeCeleb?.total_earnings || 0, txEarnings, totalBookingsEarnings);
+
       setStats({
-        totalEarnings,
+        totalEarnings: effectiveTotalEarnings,
         pendingEarnings,
         totalBookings: bookingsData?.length || 0,
-        rating: celebrity?.rating || 0,
-        reviewCount: celebrity?.review_count || 0
+        rating: activeCeleb?.rating || 0,
+        reviewCount: activeCeleb?.review_count || 0
       });
     } catch (error) {
       console.error('Error fetching stats:', error);

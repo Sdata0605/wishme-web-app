@@ -191,8 +191,16 @@ export default function CelebrityVoiceCall() {
           scheduledAt
         }
       });
-      // Check for error in response data (non-2xx returns data with error field)
-      if (error) throw error;
+      if (error) {
+        let errMessage = error.message;
+        try {
+          if ('context' in error && (error as any).context) {
+            const body = await (error as any).context.json();
+            errMessage = body.error || body.message || errMessage;
+          }
+        } catch { /* ignore */ }
+        throw new Error(errMessage);
+      }
       if (data?.error) throw new Error(data.error);
       const successMessage = scheduledAt
         ? `Your call has been scheduled for ${format(new Date(scheduledAt), "PPP 'at' h:mm a")}`
