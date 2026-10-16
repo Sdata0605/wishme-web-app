@@ -89,7 +89,8 @@ export default function Bookings() {
           break;
         case 'photo':
           result = await supabase.from('photo_wishes')
-            .select('id, status, occasion_type, recipient_name, message, output_url, created_at, credits_used')
+            // The table calls these occasion / wish_message / edited_image_url / amount_charged; the page reads them under the old names.
+            .select('id, status, occasion_type:occasion, recipient_name, message:wish_message, output_url:edited_image_url, created_at, credits_used:amount_charged')
             .eq('user_id', profile.id).order('created_at', { ascending: false }).limit(ITEMS_PER_PAGE);
           break;
         case 'calls':
@@ -99,7 +100,7 @@ export default function Bookings() {
           break;
         case 'music':
           result = await supabase.from('music_generations')
-            .select('id, status, song_title, genre, mood, audio_url, created_at, credits_used, has_vocals, lyrics')
+            .select('id, status, song_title, genre, mood, audio_url:song_url, created_at, credits_used, lyrics')
             .eq('user_id', profile.id).order('created_at', { ascending: false }).limit(ITEMS_PER_PAGE);
           break;
         case 'image-music':

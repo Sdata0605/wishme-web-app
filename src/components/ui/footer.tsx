@@ -28,7 +28,7 @@ export function Footer() {
     try {
       // Save to newsletter_subscriptions table
       const { error: subError } = await supabase.from('newsletter_subscriptions').upsert(
-        { email, is_active: true, subscribed_at: new Date().toISOString() },
+        { email, status: 'active', subscribed_at: new Date().toISOString() },
         { onConflict: 'email' }
       );
       if (subError) throw subError;

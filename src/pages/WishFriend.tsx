@@ -162,6 +162,10 @@ export default function WishFriend({ fixedType }: { fixedType?: "ugc_video" } = 
       navigate("/greeting-cards");
       return;
     }
+    if (type === "ugc_video") {
+      navigate("/ugc-videos");
+      return;
+    }
     setWishType(type);
     setStep("details");
   };

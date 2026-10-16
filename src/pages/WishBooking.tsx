@@ -214,7 +214,8 @@ export default function WishBooking() {
           discount_percentage: discountPercentage,
           discount_amount: savings,
           payment_method: 'wallet',
-          payment_status: 'completed',
+          // Created unpaid; it becomes 'completed' only after the wallet has been charged, and that change is what pays the celebrity.
+          payment_status: 'pending',
           status: 'pending'
         })
         .select()
@@ -244,6 +245,10 @@ export default function WishBooking() {
         await supabase.from('wish_celebrity_orders').delete().eq('id', order.id);
         throw new Error(`Payment failed: ${txnError.message}`);
       }
+
+      // The wallet has been charged: mark the order paid.
+      const { error: paidError } = await supabase.from('wish_celebrity_orders').update({ payment_status: 'completed' }).eq('id', order.id);
+      if (paidError) console.warn('Could not mark the wish order paid:', paidError.message);
 
       // Refetch balance to show updated amount
       await refetchBalance();
