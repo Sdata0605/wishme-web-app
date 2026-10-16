@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { encodeBase64 } from "https://deno.land/std@0.224.0/encoding/base64.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -20,6 +21,80 @@ async function uploadBase64ToStorage(supabase: any, base64Url: string, userId: s
     return publicUrl;
   } catch (e) { console.error('Upload helper error:', e); return null; }
 }
+
+/** Largest reference photo we send to the model, in bytes. Bigger ones are skipped, not shrunk. */
+const MAX_REFERENCE_BYTES = 4 * 1024 * 1024;
+/** Most real photos of the celebrity passed to the model. */
+const MAX_CELEBRITY_PHOTOS = 3;
+
+/**
+ * A readable link for a stored photo. Storage URLs are turned into short-lived signed ones, so this
+ * keeps working if the bucket is ever made private; anything else is returned unchanged.
+ */
+async function readableUrl(supabase: any, url: string): Promise<string> {
+  const match = url.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/([^?]+)/);
+  if (!match) return url;
+  try {
+    const { data } = await supabase.storage.from(match[1]).createSignedUrl(decodeURIComponent(match[2]), 600);
+    return data?.signedUrl ?? url;
+  } catch {
+    return url;
+  }
+}
+
+/** Downloads a photo and returns it as a data URL, or null if it cannot be fetched or is too big. */
+async function photoAsDataUrl(supabase: any, url: string): Promise<string | null> {
+  try {
+    const res = await fetch(await readableUrl(supabase, url));
+    if (!res.ok) return null;
+    const type = res.headers.get('content-type') ?? '';
+    if (!type.startsWith('image/')) return null;
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.length === 0 || bytes.length > MAX_REFERENCE_BYTES) return null;
+    return `data:${type.split(';')[0]};base64,${encodeBase64(bytes)}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Real photos of the celebrity, best first: the profile photo, the face photo they recorded consent
+ * with, their promotional image, then anything they or the admin uploaded to their media library.
+ * These are what make the generated person actually look like them.
+ */
+async function celebrityPhotos(supabase: any, celebrityId: string, celeb: Record<string, any>): Promise<string[]> {
+  const urls: string[] = [];
+  const add = (u: unknown) => { if (typeof u === 'string' && u.trim() && !urls.includes(u.trim())) urls.push(u.trim()); };
+  add(celeb.image_url);
+  add(celeb.consent_photo_url);
+  add(celeb.promotional_image_url);
+  try {
+    const { data: media } = await supabase
+      .from('celebrity_media')
+      .select('file_url, thumbnail_url, media_type')
+      .eq('celebrity_id', celebrityId)
+      .order('created_at', { ascending: false })
+      .limit(6);
+    for (const m of media ?? []) {
+      if (m.media_type === 'image' || m.media_type === 'photo') add(m.file_url);
+    }
+  } catch (e) {
+    console.error('celebrity_media lookup failed:', e);
+  }
+
+  const photos: string[] = [];
+  for (const url of urls) {
+    if (photos.length >= MAX_CELEBRITY_PHOTOS) break;
+    const dataUrl = await photoAsDataUrl(supabase, url);
+    if (dataUrl) photos.push(dataUrl);
+  }
+  return photos;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Tries per model for a busy or empty answer, and the point after which we stop trying. */
+const TRIES_PER_MODEL = 3;
+const GENERATION_BUDGET_MS = 110_000;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -63,7 +138,11 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: `Insufficient balance. Need ₹${price}, have ₹${profile.wallet_balance}` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const { data: celebrity } = await supabase.from('celebrities').select('name, category').eq('id', celebrityId).single();
+    const { data: celebrity } = await supabase
+      .from('celebrities')
+      .select('name, category, image_url, consent_photo_url, promotional_image_url')
+      .eq('id', celebrityId)
+      .single();
     if (!celebrity) return new Response(JSON.stringify({ error: 'Celebrity not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     const { data: generation, error: createError } = await supabase
@@ -73,89 +152,120 @@ serve(async (req) => {
 
     if (createError) throw new Error(`DB insert failed: ${createError.message}`);
 
+    const photos = await celebrityPhotos(supabase, celebrityId, celebrity);
+    console.log(`Using ${photos.length} reference photo(s) of ${celebrity.name}`);
+
     let imagePrompt = `Create a professional promotional image featuring ${celebrity.name} (${celebrity.category}).\nConcept: ${concept}`;
     if (brandingDetails) imagePrompt += `\nBranding: ${brandingDetails}`;
     imagePrompt += `\nStyle: High-quality professional marketing image, vibrant colors, modern design.`;
+    if (photos.length > 0) {
+      imagePrompt += `\n\nIMPORTANT: The attached photo(s) show the real ${celebrity.name}. The person in the image MUST be this exact person: keep their real face, facial features, skin tone, hair and age recognisable and true to the photo(s). Do not invent, replace or alter the person, and do not use a lookalike. Only change the setting, clothing, lighting and layout to fit the concept.`;
+    }
 
     console.log('Generating image via OpenRouter Image API...');
     let rawImageUrl: string | null = null;
     const lastErrors: string[] = [];
     const imageModels = ['google/gemini-2.5-flash-image', 'google/gemini-2.5-flash-image-preview'];
-    const hasReference = Boolean(referenceImageUrl && referenceImageSource !== 'none');
+    const hasUserReference = Boolean(referenceImageUrl && referenceImageSource !== 'none');
+    // The celebrity's real photos come first, then the picture the user attached (a product, a style).
+    const references: string[] = [...photos, ...(hasUserReference ? [referenceImageUrl as string] : [])];
+    const deadline = Date.now() + GENERATION_BUDGET_MS;
 
     if (OPENROUTER_API_KEY) {
       for (const model of imageModels) {
-        const imageBody: Record<string, unknown> = {
-          model,
-          prompt: imagePrompt,
-          aspect_ratio: '1:1',
-        };
-        if (hasReference) {
-          imageBody.input_references = [
-            { type: 'image_url', image_url: { url: referenceImageUrl } },
-          ];
+        // A busy model (429 / 5xx) or an empty answer is retried before moving to the next model.
+        for (let attempt = 1; attempt <= TRIES_PER_MODEL && !rawImageUrl && Date.now() < deadline; attempt++) {
+          if (attempt > 1) await sleep(1000 * (attempt - 1));
+          const imageBody: Record<string, unknown> = {
+            model,
+            prompt: imagePrompt,
+            aspect_ratio: '1:1',
+          };
+          if (references.length > 0) {
+            imageBody.input_references = references.map((url) => ({ type: 'image_url', image_url: { url } }));
+          }
+          let imageResponse: Response;
+          try {
+            imageResponse = await fetch('https://openrouter.ai/api/v1/images', {
+              method: 'POST',
+              headers: aiHeaders,
+              body: JSON.stringify(imageBody),
+            });
+          } catch (e) {
+            lastErrors.push(`Image API ${model} network error`);
+            continue;
+          }
+          if (!imageResponse.ok) {
+            const errorText = await imageResponse.text();
+            const msg = `Image API ${model} ${imageResponse.status}`;
+            console.error(msg, `(try ${attempt})`, errorText.substring(0, 400));
+            lastErrors.push(msg);
+            // Rate limits and server errors are worth another try; a rejected request is not.
+            if (imageResponse.status === 429 || imageResponse.status >= 500) continue;
+            break;
+          }
+          const imageData = await imageResponse.json();
+          const item = imageData?.data?.[0];
+          if (typeof item?.url === 'string' && item.url) {
+            rawImageUrl = item.url;
+          } else if (typeof item?.b64_json === 'string' && item.b64_json) {
+            const media = typeof item.media_type === 'string' && item.media_type.startsWith('image/')
+              ? item.media_type
+              : 'image/png';
+            rawImageUrl = `data:${media};base64,${item.b64_json}`;
+          }
+          if (rawImageUrl) {
+            console.log('Image generated with Image API', model, `(try ${attempt})`);
+            break;
+          }
+          lastErrors.push(`Image API ${model} returned no image`);
         }
-        const imageResponse = await fetch('https://openrouter.ai/api/v1/images', {
-          method: 'POST',
-          headers: aiHeaders,
-          body: JSON.stringify(imageBody),
-        });
-        if (!imageResponse.ok) {
-          const errorText = await imageResponse.text();
-          const msg = `Image API ${model} ${imageResponse.status}`;
-          console.error(msg, errorText.substring(0, 400));
-          lastErrors.push(msg);
-          continue;
-        }
-        const imageData = await imageResponse.json();
-        const item = imageData?.data?.[0];
-        if (typeof item?.url === 'string' && item.url) {
-          rawImageUrl = item.url;
-        } else if (typeof item?.b64_json === 'string' && item.b64_json) {
-          const media = typeof item.media_type === 'string' && item.media_type.startsWith('image/')
-            ? item.media_type
-            : 'image/png';
-          rawImageUrl = `data:${media};base64,${item.b64_json}`;
-        }
-        if (rawImageUrl) {
-          console.log('Image generated with Image API', model);
-          break;
-        }
-        lastErrors.push(`Image API ${model} returned no image`);
+        if (rawImageUrl) break;
       }
 
       if (!rawImageUrl) {
         console.log('Falling back to OpenRouter chat image models');
-        const imageMessages = hasReference
+        const imageMessages = references.length > 0
           ? [{ role: 'user', content: [
               { type: 'text', text: imagePrompt },
-              { type: 'image_url', image_url: { url: referenceImageUrl } },
+              ...references.map((url) => ({ type: 'image_url', image_url: { url } })),
             ]}]
           : [{ role: 'user', content: imagePrompt }];
         for (const model of imageModels) {
-          const imageResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-            method: 'POST',
-            headers: aiHeaders,
-            body: JSON.stringify({ model, messages: imageMessages, modalities: ['image', 'text'] }),
-          });
-          if (!imageResponse.ok) {
-            const errorText = await imageResponse.text();
-            const msg = `Chat image ${model} ${imageResponse.status}`;
-            console.error(msg, errorText.substring(0, 400));
-            lastErrors.push(msg);
-            continue;
+          for (let attempt = 1; attempt <= TRIES_PER_MODEL && !rawImageUrl && Date.now() < deadline; attempt++) {
+            if (attempt > 1) await sleep(1000 * (attempt - 1));
+            let imageResponse: Response;
+            try {
+              imageResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: aiHeaders,
+                body: JSON.stringify({ model, messages: imageMessages, modalities: ['image', 'text'] }),
+              });
+            } catch (e) {
+              lastErrors.push(`Chat image ${model} network error`);
+              continue;
+            }
+            if (!imageResponse.ok) {
+              const errorText = await imageResponse.text();
+              const msg = `Chat image ${model} ${imageResponse.status}`;
+              console.error(msg, `(try ${attempt})`, errorText.substring(0, 400));
+              lastErrors.push(msg);
+              if (imageResponse.status === 429 || imageResponse.status >= 500) continue;
+              break;
+            }
+            const imageData = await imageResponse.json();
+            const message = imageData?.choices?.[0]?.message;
+            const fromImages = message?.images?.[0]?.image_url?.url || message?.images?.[0]?.url;
+            if (typeof fromImages === 'string' && fromImages) {
+              rawImageUrl = fromImages;
+            }
+            if (rawImageUrl) {
+              console.log('Image generated with chat model', model, `(try ${attempt})`);
+              break;
+            }
+            lastErrors.push(`Chat image ${model} returned no image`);
           }
-          const imageData = await imageResponse.json();
-          const message = imageData?.choices?.[0]?.message;
-          const fromImages = message?.images?.[0]?.image_url?.url || message?.images?.[0]?.url;
-          if (typeof fromImages === 'string' && fromImages) {
-            rawImageUrl = fromImages;
-          }
-          if (rawImageUrl) {
-            console.log('Image generated with chat model', model);
-            break;
-          }
-          lastErrors.push(`Chat image ${model} returned no image`);
+          if (rawImageUrl) break;
         }
       }
     }
