@@ -25,7 +25,7 @@ async function uploadBase64ToStorage(supabase: any, base64Url: string, userId: s
 /** Largest reference photo we send to the model, in bytes. Bigger ones are skipped, not shrunk. */
 const MAX_REFERENCE_BYTES = 4 * 1024 * 1024;
 /** Most real photos of the celebrity passed to the model. */
-const MAX_CELEBRITY_PHOTOS = 3;
+const MAX_CELEBRITY_PHOTOS = 4;
 
 /**
  * A readable link for a stored photo. Storage URLs are turned into short-lived signed ones, so this
@@ -58,29 +58,29 @@ async function photoAsDataUrl(supabase: any, url: string): Promise<string | null
 }
 
 /**
- * Real photos of the celebrity, best first: the profile photo, the face photo they recorded consent
- * with, their promotional image, then anything they or the admin uploaded to their media library.
- * These are what make the generated person actually look like them.
+ * Real photos of the celebrity, best first: their profile photo, then the promo photos they uploaded on their
+ * dashboard (newest first: these are the ones they chose to show how they look), then the face photo they
+ * recorded consent with, then their promotional image. These are what make the generated person actually look
+ * like them.
  */
 async function celebrityPhotos(supabase: any, celebrityId: string, celeb: Record<string, any>): Promise<string[]> {
   const urls: string[] = [];
   const add = (u: unknown) => { if (typeof u === 'string' && u.trim() && !urls.includes(u.trim())) urls.push(u.trim()); };
   add(celeb.image_url);
-  add(celeb.consent_photo_url);
-  add(celeb.promotional_image_url);
   try {
     const { data: media } = await supabase
       .from('celebrity_media')
-      .select('file_url, thumbnail_url, media_type')
+      .select('file_url, media_type')
       .eq('celebrity_id', celebrityId)
+      .in('media_type', ['photo', 'image'])
       .order('created_at', { ascending: false })
       .limit(6);
-    for (const m of media ?? []) {
-      if (m.media_type === 'image' || m.media_type === 'photo') add(m.file_url);
-    }
+    for (const m of media ?? []) add(m.file_url);
   } catch (e) {
     console.error('celebrity_media lookup failed:', e);
   }
+  add(celeb.consent_photo_url);
+  add(celeb.promotional_image_url);
 
   const photos: string[] = [];
   for (const url of urls) {

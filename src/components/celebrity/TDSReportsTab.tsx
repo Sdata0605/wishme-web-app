@@ -1,27 +1,17 @@
-import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TDSSummaryCard } from "@/components/tds/TDSSummaryCard";
 import { TDSTransactionTable } from "@/components/tds/TDSTransactionTable";
 import { useTDSReports } from "@/hooks/useTDSReports";
 import { Button } from "@/components/ui/button";
 import { Download, IndianRupee, Receipt, TrendingDown } from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export function TDSReportsTab() {
-  const [financialYear, setFinancialYear] = useState<string>("2024-25");
   const { transactions, stats, loading } = useTDSReports();
 
   const handleDownloadPDF = () => {
     // TODO: Implement PDF generation
     console.log("Downloading TDS Report PDF...");
   };
-
-  const currentYear = new Date().getFullYear();
-  const financialYears = [
-    `${currentYear - 2}-${(currentYear - 1).toString().slice(-2)}`,
-    `${currentYear - 1}-${currentYear.toString().slice(-2)}`,
-    `${currentYear}-${(currentYear + 1).toString().slice(-2)}`
-  ];
 
   if (loading) {
     return (
@@ -38,22 +28,10 @@ export function TDSReportsTab() {
         <div>
           <h2 className="text-2xl font-bold">TDS Reports</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            View your Tax Deducted at Source (TDS) statements
+            All the Tax Deducted at Source (TDS) on your earnings so far
           </p>
         </div>
         <div className="flex gap-2">
-          <Select value={financialYear} onValueChange={setFinancialYear}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Select FY" />
-            </SelectTrigger>
-            <SelectContent>
-              {financialYears.map((year) => (
-                <SelectItem key={year} value={year}>
-                  FY {year}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
           <Button onClick={handleDownloadPDF} variant="outline">
             <Download className="w-4 h-4 mr-2" />
             Download PDF

@@ -39,14 +39,11 @@ export default function CelebrityDashboard() {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, profile, changePassword, signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
   const { toast } = useToast();
   const [celebrity, setCelebrity] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [noCelebrityAccess, setNoCelebrityAccess] = useState(false);
-  const [changingPassword, setChangingPassword] = useState(false);
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [stats, setStats] = useState({
     totalEarnings: 0,
     pendingEarnings: 0,
@@ -172,34 +169,6 @@ export default function CelebrityDashboard() {
       console.error('Error fetching stats:', error);
     }
   };
-
-  const handlePasswordChange = async () => {
-    if (newPassword !== confirmPassword) {
-      toast({
-        title: "Error",
-        description: "Passwords do not match"
-      });
-      return;
-    }
-
-    if (newPassword.length < 6) {
-      toast({
-        title: "Error",
-        description: "Password must be at least 6 characters"
-      });
-      return;
-    }
-
-    setChangingPassword(true);
-    const { error } = await changePassword(newPassword);
-    
-    if (!error) {
-      setNewPassword('');
-      setConfirmPassword('');
-    }
-    setChangingPassword(false);
-  };
-
 
   const buildBaseFolder = () => {
     return (
@@ -828,42 +797,6 @@ export default function CelebrityDashboard() {
                     </div>
                   </div>
                 )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Change Password</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium">New Password</label>
-                    <input 
-                      type="password" 
-                      className="w-full p-2 border rounded-lg mt-1"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="Enter new password"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium">Confirm Password</label>
-                    <input 
-                      type="password" 
-                      className="w-full p-2 border rounded-lg mt-1"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Confirm new password"
-                    />
-                  </div>
-                </div>
-                <Button 
-                  onClick={handlePasswordChange}
-                  disabled={changingPassword || !newPassword || !confirmPassword}
-                >
-                  {changingPassword ? "Changing..." : "Change Password"}
-                </Button>
               </CardContent>
             </Card>
           </TabsContent>
