@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { CelebrityCommissionPanel } from "@/components/admin/CelebrityCommissionPanel";
 import { Search, Edit, Star, CheckCircle, XCircle, Plus, Calendar, Upload, Music, Image as ImageIcon, Video, Trash2, Eye, Settings, IndianRupee, Heart, Lock, Key } from "lucide-react";
 
 interface Celebrity {
@@ -34,6 +35,8 @@ interface Celebrity {
   available_balance?: number;
   /** The celebrity's share of each paid order, before TDS. */
   commission_percentage?: number;
+  /** What a voice call with this celebrity costs the user, per call. */
+  voice_call_price?: number;
   profile_id?: string;
   consent_status?: string;
   consent_photo_url?: string;
@@ -1453,7 +1456,7 @@ export default function AdminCelebrities() {
             </DialogDescription>
           </DialogHeader>
           {editingCelebrity && (
-            <div className="space-y-4 max-h-96 overflow-y-auto">
+            <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="name">Name</Label>
@@ -1512,23 +1515,51 @@ export default function AdminCelebrities() {
                 </div>
               </div>
 
-              <div>
-                <Label htmlFor="editCommission">Celebrity Commission (%)</Label>
-                <Input
-                  id="editCommission"
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={editingCelebrity.commission_percentage ?? 70}
-                  onChange={(e) => {
-                    const pct = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
-                    setEditingCelebrity({ ...editingCelebrity, commission_percentage: pct });
-                  }}
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  The celebrity's share of each paid order (video wish, promotions, voice calls). The platform keeps the rest; TDS is taken off the celebrity's share.
-                </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="ugcPrice">UGC Ad / UGC Video Price (₹)</Label>
+                  <Input
+                    id="ugcPrice"
+                    type="number"
+                    value={editingCelebrity.service_prices?.ugc_ad || 0}
+                    onChange={(e) => setEditingCelebrity({
+                      ...editingCelebrity,
+                      service_prices: { ...editingCelebrity.service_prices, ugc_ad: parseInt(e.target.value) || 0 }
+                    })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="voiceCallPrice">Voice Call Price (₹ per call)</Label>
+                  <Input
+                    id="voiceCallPrice"
+                    type="number"
+                    value={editingCelebrity.voice_call_price || 0}
+                    onChange={(e) => setEditingCelebrity({ ...editingCelebrity, voice_call_price: parseInt(e.target.value) || 0 })}
+                  />
+                </div>
               </div>
+
+              <CelebrityCommissionPanel
+                celebrity={editingCelebrity}
+                subscription={favoritePricing.find((p) => p.celebrity_id === editingCelebrity.id)}
+                onCommissionChange={(pct) => setEditingCelebrity({ ...editingCelebrity, commission_percentage: pct })}
+                onEditSubscription={() => {
+                  setEditingPricing(
+                    favoritePricing.find((p) => p.celebrity_id === editingCelebrity.id) || {
+                      id: '',
+                      celebrity_id: editingCelebrity.id,
+                      price: 999,
+                      referrer_commission_percentage: 10,
+                      celebrity_commission_percentage: 5,
+                      is_enabled: true,
+                      created_at: '',
+                      updated_at: ''
+                    }
+                  );
+                  setEditDialogOpen(false);
+                  setPricingDialogOpen(true);
+                }}
+              />
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
