@@ -32,6 +32,8 @@ interface Celebrity {
   created_at: string;
   total_earnings?: number;
   available_balance?: number;
+  /** The celebrity's share of each paid order, before TDS. */
+  commission_percentage?: number;
   profile_id?: string;
   consent_status?: string;
   consent_photo_url?: string;
@@ -534,9 +536,11 @@ export default function AdminCelebrities() {
 
   const updateCelebrity = async (celebrityId: string, updates: Partial<Celebrity>) => {
     try {
+      // The list row carries the joined `profiles` object, which is not a column of `celebrities`.
+      const { profiles: _joined, ...columns } = updates;
       const { error } = await supabase
         .from('celebrities')
-        .update(updates)
+        .update(columns)
         .eq('id', celebrityId);
 
       if (error) throw error;
@@ -1506,6 +1510,24 @@ export default function AdminCelebrities() {
                     })}
                   />
                 </div>
+              </div>
+
+              <div>
+                <Label htmlFor="editCommission">Celebrity Commission (%)</Label>
+                <Input
+                  id="editCommission"
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={editingCelebrity.commission_percentage ?? 70}
+                  onChange={(e) => {
+                    const pct = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
+                    setEditingCelebrity({ ...editingCelebrity, commission_percentage: pct });
+                  }}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  The celebrity's share of each paid order (video wish, promotions, voice calls). The platform keeps the rest; TDS is taken off the celebrity's share.
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

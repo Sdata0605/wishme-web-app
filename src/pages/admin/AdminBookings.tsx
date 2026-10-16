@@ -31,8 +31,9 @@ const ORDER_TABS = [
   { id: "wish-friend", label: "Wish a Friend", icon: Heart, requiresApproval: true },
   { id: "video-bookings", label: "Video Wishes", icon: Video, requiresApproval: true },
   { id: "ugc-ads", label: "UGC Ads", icon: Megaphone, requiresApproval: true },
-  { id: "image-promotions", label: "Image Promos", icon: ImageIcon, requiresApproval: true },
   { id: "occasion-bookings", label: "Occasions", icon: Calendar, requiresApproval: true },
+  // Generated instantly by the AI and paid on the spot: the admin only watches these, nothing to approve.
+  { id: "image-promotions", label: "Image Promos", icon: ImageIcon, requiresApproval: false },
   { id: "wish-celebrity", label: "Wish Celebrity", icon: Heart, requiresApproval: false },
   { id: "greeting-cards", label: "Greeting Cards", icon: Gift, requiresApproval: false },
   { id: "celebrity-calls", label: "Celebrity Calls", icon: Phone, requiresApproval: false },
@@ -867,9 +868,9 @@ export default function AdminBookings() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 Image Promotions ({filteredItems.length})
-                <Badge variant="destructive">Requires Approval</Badge>
+                <Badge variant="secondary">Auto-generated</Badge>
               </CardTitle>
-              <CardDescription>Celebrity image promotion orders - Admin approval required</CardDescription>
+              <CardDescription>Images made by users with a celebrity. No approval needed: the price is charged and the celebrity's commission credited when the image is created.</CardDescription>
             </CardHeader>
             <CardContent>
               {currentTabData.loading ? <TableSkeleton /> : (
@@ -886,7 +887,7 @@ export default function AdminBookings() {
                         </div>
                         <p className="text-xs text-muted-foreground truncate">{promo.concept}</p>
                         <div className="flex items-center justify-between">
-                          <span className="text-xs text-muted-foreground">{format(new Date(promo.created_at), 'PP')}</span>
+                          <span className="text-xs text-muted-foreground">{format(new Date(promo.created_at), 'PP')} · <span className="font-semibold text-foreground">₹{promo.price_paid?.toLocaleString()}</span></span>
                           {promo.generated_image_url && (
                             <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => window.open(promo.generated_image_url, '_blank')}>
                               <Eye className="w-3 h-3" />
@@ -904,6 +905,7 @@ export default function AdminBookings() {
                         <TableHead>Customer</TableHead>
                         <TableHead>Celebrity</TableHead>
                         <TableHead>Concept</TableHead>
+                        <TableHead>Price</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Date</TableHead>
                         <TableHead>Image</TableHead>
@@ -916,20 +918,21 @@ export default function AdminBookings() {
                           <TableCell>{getCustomerName(promo)}</TableCell>
                           <TableCell>{promo.celebrities?.name || 'N/A'}</TableCell>
                           <TableCell className="max-w-[200px] truncate">{promo.concept}</TableCell>
+                          <TableCell className="font-semibold">₹{promo.price_paid?.toLocaleString()}</TableCell>
                           <TableCell>{getStatusBadge(promo.status)}</TableCell>
                           <TableCell>{format(new Date(promo.created_at), 'PP')}</TableCell>
                           <TableCell>
                             {promo.generated_image_url && (
-                              <Button variant="outline" size="sm" onClick={() => window.open(promo.generated_image_url, '_blank')}>
-                                <Eye className="w-4 h-4" />
-                              </Button>
+                              <button type="button" onClick={() => window.open(promo.generated_image_url, '_blank')} title="Open the generated image">
+                                <img src={promo.generated_image_url} alt="Generated promotion" className="h-12 w-12 rounded object-cover border" loading="lazy" />
+                              </button>
                             )}
                           </TableCell>
                         </TableRow>
                       ))}
                       {filteredItems.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={7} className="text-center text-muted-foreground py-8">No orders found</TableCell>
+                          <TableCell colSpan={8} className="text-center text-muted-foreground py-8">No orders found</TableCell>
                         </TableRow>
                       )}
                     </TableBody>

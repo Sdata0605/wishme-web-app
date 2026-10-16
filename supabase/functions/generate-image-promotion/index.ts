@@ -128,22 +128,31 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    const { data: profile } = await supabase.from('profiles').select('id, wallet_balance').eq('user_id', user.id).single();
+    const { data: profile } = await supabase.from('profiles').select('id, wallet_balance, plan').eq('user_id', user.id).single();
     if (!profile) return new Response(JSON.stringify({ error: 'Profile not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-
-    const { data: pricingData } = await supabase.from('platform_settings').select('setting_value').eq('setting_key', 'image_promotion_price').single();
-    const price = pricingData ? parseInt(pricingData.setting_value) : 25;
-
-    if (profile.wallet_balance < price) {
-      return new Response(JSON.stringify({ error: `Insufficient balance. Need ₹${price}, have ₹${profile.wallet_balance}` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
 
     const { data: celebrity } = await supabase
       .from('celebrities')
-      .select('name, category, image_url, consent_photo_url, promotional_image_url')
+      .select('name, category, image_url, consent_photo_url, promotional_image_url, service_prices')
       .eq('id', celebrityId)
       .single();
     if (!celebrity) return new Response(JSON.stringify({ error: 'Celebrity not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+    // The price the admin set on this celebrity wins; the platform-wide price is only the fallback.
+    const celebrityPrice = Number(celebrity.service_prices?.image_promotion);
+    let basePrice = celebrityPrice > 0 ? celebrityPrice : 0;
+    if (basePrice <= 0) {
+      const { data: pricingData } = await supabase.from('platform_settings').select('setting_value').eq('setting_key', 'image_promotion_price').maybeSingle();
+      basePrice = pricingData ? parseInt(pricingData.setting_value) || 25 : 25;
+    }
+    // The buyer's plan discount, applied here so the charge never depends on what the phone claims.
+    const { data: plan } = await supabase.from('plans').select('service_discount_percentage').eq('name', String(profile.plan ?? '')).maybeSingle();
+    const discountPct = Number(plan?.service_discount_percentage ?? 0) || 0;
+    const price = Math.round(basePrice * (1 - discountPct / 100));
+
+    if ((profile.wallet_balance ?? 0) < price) {
+      return new Response(JSON.stringify({ error: `Insufficient balance. Need ₹${price}, have ₹${profile.wallet_balance}` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     const { data: generation, error: createError } = await supabase
       .from('image_promotions')
@@ -295,11 +304,27 @@ serve(async (req) => {
       description: `AI Image Promotion - ${celebrity.name}`
     });
 
+    // Pay the celebrity their share (commission % set by the admin, minus TDS). A failure here must not
+    // lose the user's image, so it is logged and the order is flagged for the admin instead.
+    const { data: credited, error: creditError } = await supabase.rpc('credit_celebrity_for_order', {
+      p_celebrity_id: celebrityId,
+      p_order_id: generation.id,
+      p_order_type: 'image_promotion',
+      p_amount: price,
+      p_description: `Commission from image promotion #${String(generation.id).substring(0, 8)}`,
+    });
+    if (creditError) {
+      console.error('Celebrity credit failed:', creditError.message);
+      await supabase.from('image_promotions').update({ error_message: `celebrity credit failed: ${creditError.message}` }).eq('id', generation.id);
+    } else {
+      console.log('Celebrity credited (net after TDS):', credited);
+    }
+
     console.log('Image promotion generated successfully');
 
     return new Response(JSON.stringify({
       success: true,
-      generation: { ...generation, generated_image_url: finalImageUrl, status: 'completed' }
+      generation: { ...generation, price_paid: price, generated_image_url: finalImageUrl, status: 'completed' }
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error: any) {
