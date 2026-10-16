@@ -289,19 +289,7 @@ export default function AdminWalletManagement() {
 
       if (updateError) throw updateError;
 
-      const { data: celeb } = await supabase
-        .from('celebrities')
-        .select('available_balance')
-        .eq('id', payout.celebrity_id)
-        .maybeSingle();
-
-      if (celeb) {
-        await supabase
-          .from('celebrities')
-          .update({ available_balance: (celeb.available_balance || 0) + payout.requested_amount })
-          .eq('id', payout.celebrity_id);
-      }
-
+      // The database returns the amount to the celebrity's balance by itself, once, when a pending request is rejected.
       toast({ title: "Payout rejected", description: "Balance restored to celebrity" });
       setShowPayoutModal(false);
       setPayoutAdminNote("");

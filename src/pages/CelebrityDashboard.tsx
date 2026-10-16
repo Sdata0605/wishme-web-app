@@ -25,11 +25,9 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { CelebrityContentManager } from "@/components/celebrity/CelebrityContentManager";
-import { ConsentCapture } from "@/components/celebrity/ConsentCapture";
 import { DashboardSwitcher } from "@/components/dashboard/DashboardSwitcher";
 import { WalletTab } from "@/components/celebrity/WalletTab";
-import { BookingsTab } from "@/components/celebrity/BookingsTab";
+import { OrdersTab } from "@/components/celebrity/OrdersTab";
 import { ReviewsTab } from "@/components/celebrity/ReviewsTab";
 import { TDSReportsTab } from "@/components/celebrity/TDSReportsTab";
 import { FollowersTab } from "@/components/celebrity/FollowersTab";
@@ -410,7 +408,7 @@ export default function CelebrityDashboard() {
             <CardContent className="p-3 md:p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs md:text-sm text-muted-foreground">Total Bookings</p>
+                  <p className="text-xs md:text-sm text-muted-foreground">Total Orders</p>
                   <p className="text-lg md:text-2xl font-bold">{stats.totalBookings}</p>
                 </div>
                 <Users className="w-6 h-6 md:w-8 md:h-8 text-blue-500" />
@@ -444,14 +442,12 @@ export default function CelebrityDashboard() {
         </div>
 
         {/* Main Content */}
-        <Tabs defaultValue="content" className="space-y-6">
+        <Tabs defaultValue="orders" className="space-y-6">
           <TabsList className="flex w-full overflow-x-auto scrollbar-hide h-auto">
+            <TabsTrigger value="orders" className="flex-shrink-0 text-xs sm:text-sm">Orders</TabsTrigger>
             <TabsTrigger value="content" className="flex-shrink-0 text-xs sm:text-sm">Content</TabsTrigger>
             <TabsTrigger value="wallet" className="flex-shrink-0 text-xs sm:text-sm">Wallet</TabsTrigger>
             <TabsTrigger value="messages" className="flex-shrink-0 text-xs sm:text-sm">Messages</TabsTrigger>
-            <TabsTrigger value="events" className="flex-shrink-0 text-xs sm:text-sm">Events</TabsTrigger>
-            <TabsTrigger value="consent" className="flex-shrink-0 text-xs sm:text-sm">Consent</TabsTrigger>
-            <TabsTrigger value="bookings" className="flex-shrink-0 text-xs sm:text-sm">Bookings</TabsTrigger>
             <TabsTrigger value="reviews" className="flex-shrink-0 text-xs sm:text-sm">Reviews</TabsTrigger>
             <TabsTrigger value="followers" className="flex-shrink-0 text-xs sm:text-sm">Followers</TabsTrigger>
             <TabsTrigger value="tds" className="flex-shrink-0 text-xs sm:text-sm">TDS</TabsTrigger>
@@ -561,7 +557,7 @@ export default function CelebrityDashboard() {
           </TabsContent>
 
           <TabsContent value="wallet" className="space-y-6">
-            <WalletTab celebrityId={celebrity?.id} stats={stats} availableBalance={celebrity?.available_balance || 0} />
+            <WalletTab celebrityId={celebrity?.id} stats={stats} availableBalance={celebrity?.available_balance || 0} onChanged={fetchCelebrityData} />
           </TabsContent>
 
           <TabsContent value="messages" className="space-y-6">
@@ -572,10 +568,6 @@ export default function CelebrityDashboard() {
                 <p>Sign up as a celebrity to receive messages from fans.</p>
               </div>
             )}
-          </TabsContent>
-
-          <TabsContent value="events" className="space-y-6">
-            <CelebrityContentManager />
           </TabsContent>
 
           <TabsContent value="profile" className="space-y-6">
@@ -888,63 +880,8 @@ export default function CelebrityDashboard() {
             <TDSReportsTab />
           </TabsContent>
 
-          <TabsContent value="consent" className="space-y-6">
-            {/* Current Consent Status */}
-            {celebrity && (celebrity.consent_status === 'submitted' || celebrity.consent_status === 'approved') && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Consent Status</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-2">
-                      <Badge variant={celebrity.consent_status === 'approved' ? 'default' : 'secondary'}>
-                        {celebrity.consent_status === 'approved' ? 'Approved' : 'Pending Review'}
-                      </Badge>
-                      {celebrity.consent_given_at && (
-                        <span className="text-sm text-muted-foreground">
-                          Submitted on {new Date(celebrity.consent_given_at).toLocaleDateString()}
-                        </span>
-                      )}
-                    </div>
-                    
-                    {celebrity.consent_photo_url && (
-                      <div>
-                        <p className="text-sm font-medium mb-2">Consent Photo:</p>
-                        <img 
-                          src={celebrity.consent_photo_url} 
-                          alt="Consent" 
-                          className="w-48 h-48 object-cover rounded-lg border"
-                        />
-                      </div>
-                    )}
-                    
-                    {celebrity.consent_video_url && (
-                      <div>
-                        <p className="text-sm font-medium mb-2">Consent Video:</p>
-                        <video 
-                          src={celebrity.consent_video_url} 
-                          controls 
-                          className="w-full max-w-md rounded-lg border"
-                        />
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-            
-            {/* Show ConsentCapture only if consent not yet submitted */}
-            {celebrity && celebrity.consent_status !== 'submitted' && celebrity.consent_status !== 'approved' && (
-              <ConsentCapture 
-                celebrityId={celebrity?.id || ""}
-                onConsentSubmitted={fetchCelebrityData}
-              />
-            )}
-          </TabsContent>
-
-          <TabsContent value="bookings" className="space-y-6">
-            <BookingsTab celebrityId={celebrity?.id} />
+          <TabsContent value="orders" className="space-y-6">
+            <OrdersTab celebrityId={celebrity?.id} />
           </TabsContent>
         </Tabs>
       </div>

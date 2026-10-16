@@ -23,6 +23,8 @@ interface WalletTabProps {
     pendingEarnings: number;
   };
   availableBalance?: number;
+  /** Called after a withdrawal so the dashboard reloads the balance. */
+  onChanged?: () => void;
 }
 
 interface WalletTransaction {
@@ -66,7 +68,7 @@ interface PayoutRequest {
   admin_notes: string | null;
 }
 
-export function WalletTab({ celebrityId, stats, availableBalance = 0 }: WalletTabProps) {
+export function WalletTab({ celebrityId, stats, availableBalance = 0, onChanged }: WalletTabProps) {
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [showWithdrawDialog, setShowWithdrawDialog] = useState(false);
@@ -286,40 +288,16 @@ export function WalletTab({ celebrityId, stats, availableBalance = 0 }: WalletTa
     try {
       setSubmittingWithdraw(true);
 
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData.user) throw new Error("Not authenticated");
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('user_id', userData.user.id)
-        .maybeSingle();
-
-      if (!profile) throw new Error("Profile not found");
-
-      // Insert payout request
-      const { error: insertError } = await supabase
-        .from('payout_requests')
-        .insert({
-          celebrity_id: celebrityId,
-          profile_id: profile.id,
-          requested_amount: amount,
-          bank_account_number: selectedBank.account_number,
-          bank_name: selectedBank.bank_name,
-          ifsc_code: selectedBank.ifsc_code,
-          account_holder_name: selectedBank.account_holder_name,
-          status: 'pending'
-        });
-
-      if (insertError) throw insertError;
-
-      // Deduct from available_balance
-      const { error: updateError } = await supabase
-        .from('celebrities')
-        .update({ available_balance: Math.max(0, availableBalance - amount) })
-        .eq('id', celebrityId);
-
-      if (updateError) throw updateError;
+      // One server call checks the amount against the real balance, files the request and lowers the
+      // balance together, so the same money can never be requested twice.
+      const { error: payoutError } = await (supabase as any).rpc('request_celebrity_payout', {
+        p_bank_name: selectedBank.bank_name,
+        p_account_number: selectedBank.account_number,
+        p_ifsc_code: selectedBank.ifsc_code,
+        p_account_holder_name: selectedBank.account_holder_name,
+        p_amount: amount,
+      });
+      if (payoutError) throw new Error(payoutError.message);
 
       toast({
         title: "Withdrawal request submitted",
@@ -328,6 +306,7 @@ export function WalletTab({ celebrityId, stats, availableBalance = 0 }: WalletTa
 
       setShowWithdrawDialog(false);
       fetchPayoutRequests();
+      onChanged?.();
     } catch (error: any) {
       console.error('Error submitting withdrawal:', error);
       toast({
