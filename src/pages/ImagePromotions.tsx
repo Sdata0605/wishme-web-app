@@ -212,9 +212,6 @@ export default function ImagePromotions() {
           status: 'completed',
           paid_at: new Date().toISOString(),
         });
-        if (genId) {
-          await supabase.from('image_promotions' as any).update({ wishme_payment_id: wmId }).eq('id', genId);
-        }
       } catch (e) { console.warn('Payment ID generation failed:', e); }
       
       toast({

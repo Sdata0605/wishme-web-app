@@ -258,9 +258,6 @@ export default function PhotoWish() {
           status: 'completed',
           paid_at: new Date().toISOString(),
         });
-        if (data.photoWishId) {
-          await supabase.from('photo_wishes').update({ wishme_payment_id: wmId } as any).eq('id', data.photoWishId);
-        }
       } catch (e) { console.warn('Payment ID generation failed:', e); }
 
       toast.success("Photo wish generated successfully!");
