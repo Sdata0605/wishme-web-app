@@ -66,6 +66,8 @@ interface PayoutRequest {
   requested_at: string;
   processed_at: string | null;
   admin_notes: string | null;
+  failure_reason?: string | null;
+  utr?: string | null;
 }
 
 export function WalletTab({ celebrityId, stats, availableBalance = 0, onChanged }: WalletTabProps) {
@@ -78,6 +80,7 @@ export function WalletTab({ celebrityId, stats, availableBalance = 0, onChanged 
   const [submittingWithdraw, setSubmittingWithdraw] = useState(false);
   const [payoutRequests, setPayoutRequests] = useState<PayoutRequest[]>([]);
   const [showQuickAddBank, setShowQuickAddBank] = useState(false);
+  const [confirmAccountNumber, setConfirmAccountNumber] = useState("");
   const [savingBank, setSavingBank] = useState(false);
   const [quickBankForm, setQuickBankForm] = useState({
     bank_name: "", account_holder_name: "", account_number: "", ifsc_code: ""
@@ -234,6 +237,22 @@ export function WalletTab({ celebrityId, stats, availableBalance = 0, onChanged 
       toast({ title: "All fields required", variant: "destructive" });
       return;
     }
+    if (!/^\d{6,18}$/.test(account_number.trim())) {
+      toast({ title: "Check the account number", description: "Enter the digits only, 6 to 18 of them.", variant: "destructive" });
+      return;
+    }
+    if (account_number.trim() !== confirmAccountNumber.trim()) {
+      toast({ title: "Account numbers do not match", description: "Type the account number again exactly the same, so the money goes to the right place.", variant: "destructive" });
+      return;
+    }
+    if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc_code.trim().toUpperCase())) {
+      toast({ title: "Check the IFSC code", description: "It is 11 characters, like HDFC0001234.", variant: "destructive" });
+      return;
+    }
+    if (account_holder_name.trim().length < 3) {
+      toast({ title: "Account holder name", description: "Enter the name exactly as the bank has it.", variant: "destructive" });
+      return;
+    }
     try {
       setSavingBank(true);
       const { data: userData } = await supabase.auth.getUser();
@@ -245,7 +264,7 @@ export function WalletTab({ celebrityId, stats, availableBalance = 0, onChanged 
         .from('bank_details')
         .insert({
           user_id: profile.id,
-          bank_name, account_holder_name, account_number, ifsc_code,
+          bank_name, account_holder_name, account_number: account_number.trim(), ifsc_code: ifsc_code.trim().toUpperCase(),
           account_type: 'savings', is_default: true
         })
         .select()
@@ -256,6 +275,7 @@ export function WalletTab({ celebrityId, stats, availableBalance = 0, onChanged 
       setSelectedBank(newBank);
       setShowQuickAddBank(false);
       setQuickBankForm({ bank_name: "", account_holder_name: "", account_number: "", ifsc_code: "" });
+      setConfirmAccountNumber("");
       toast({ title: "Bank account added successfully" });
     } catch (error: any) {
       console.error('Error adding bank:', error);
@@ -288,20 +308,28 @@ export function WalletTab({ celebrityId, stats, availableBalance = 0, onChanged 
     try {
       setSubmittingWithdraw(true);
 
-      // One server call checks the amount against the real balance, files the request and lowers the
-      // balance together, so the same money can never be requested twice.
-      const { error: payoutError } = await (supabase as any).rpc('request_celebrity_payout', {
-        p_bank_name: selectedBank.bank_name,
-        p_account_number: selectedBank.account_number,
-        p_ifsc_code: selectedBank.ifsc_code,
-        p_account_holder_name: selectedBank.account_holder_name,
-        p_amount: amount,
+      // One server call reserves the money and sends it to the bank account. It checks the amount against the
+      // real balance, so the same money can never be sent twice.
+      const { data: out, error: payoutError } = await supabase.functions.invoke('celebrity-payout', {
+        body: {
+          amount,
+          bank_name: selectedBank.bank_name,
+          account_number: selectedBank.account_number,
+          ifsc_code: selectedBank.ifsc_code,
+          account_holder_name: selectedBank.account_holder_name,
+        },
       });
-      if (payoutError) throw new Error(payoutError.message);
+      if (payoutError) {
+        // The function explains what went wrong in its response body; show that, not a generic message.
+        let detail = payoutError.message;
+        try { detail = (await (payoutError as any).context?.json?.())?.error ?? detail; } catch { /* keep the generic text */ }
+        throw new Error(detail);
+      }
+      if (out?.error) throw new Error(out.error);
 
       toast({
-        title: "Withdrawal request submitted",
-        description: "Admin will process within 2-3 business days."
+        title: "Money is on its way",
+        description: `₹${amount.toLocaleString()} is being sent to your account ending ${String(selectedBank.account_number).slice(-4)}. It usually arrives within minutes.`
       });
 
       setShowWithdrawDialog(false);
@@ -437,12 +465,18 @@ export function WalletTab({ celebrityId, stats, availableBalance = 0, onChanged 
                     {req.admin_notes && (
                       <p className="text-xs text-muted-foreground mt-1">Note: {req.admin_notes}</p>
                     )}
+                    {req.failure_reason && (
+                      <p className="text-xs text-muted-foreground mt-1">Reason: {req.failure_reason}</p>
+                    )}
+                    {req.utr && (
+                      <p className="text-xs text-muted-foreground mt-1">Bank reference (UTR): {req.utr}</p>
+                    )}
                   </div>
                   <Badge variant={
                     req.status === 'processed' ? 'default' :
-                    req.status === 'rejected' ? 'destructive' : 'secondary'
+                    ['rejected', 'failed', 'reversed'].includes(req.status) ? 'destructive' : 'secondary'
                   }>
-                    {req.status}
+                    {({ pending: 'Pending', processing: 'On its way', processed: 'Paid', rejected: 'Rejected, money returned', failed: 'Failed, money returned', reversed: 'Returned by bank, money returned' } as Record<string, string>)[req.status] ?? req.status}
                   </Badge>
                 </div>
               ))}
@@ -490,6 +524,7 @@ export function WalletTab({ celebrityId, stats, availableBalance = 0, onChanged 
                       <Input placeholder="Bank Name" value={quickBankForm.bank_name} onChange={(e) => setQuickBankForm(f => ({ ...f, bank_name: e.target.value }))} />
                       <Input placeholder="Account Holder Name" value={quickBankForm.account_holder_name} onChange={(e) => setQuickBankForm(f => ({ ...f, account_holder_name: e.target.value }))} />
                       <Input placeholder="Account Number" value={quickBankForm.account_number} onChange={(e) => setQuickBankForm(f => ({ ...f, account_number: e.target.value }))} />
+                      <Input placeholder="Confirm Account Number" value={confirmAccountNumber} onChange={(e) => setConfirmAccountNumber(e.target.value)} />
                       <Input placeholder="IFSC Code" value={quickBankForm.ifsc_code} onChange={(e) => setQuickBankForm(f => ({ ...f, ifsc_code: e.target.value }))} />
                     </div>
                     <div className="flex gap-2">
