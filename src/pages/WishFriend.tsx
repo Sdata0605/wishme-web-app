@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { AuthenticatedLayout } from "@/components/layout/AuthenticatedLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { useSubscribedCelebrities } from "@/hooks/useSubscribedCelebrities";
+import { SubscribedCelebrityChips } from "@/components/celebrity/SubscribedCelebrityChips";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -15,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, ArrowRight, CheckCircle, Clapperboard, Gift, Loader2, Search, ShoppingBag, Sparkles, Video, Wallet } from "lucide-react";
 
 type WishType = "greeting_card" | "ugc_video" | "video_wish";
-type Step = "type" | "celebrity" | "details" | "review" | "done";
+type Step = "type" | "details" | "review" | "done";
 
 interface Celebrity {
   id: string;
@@ -91,11 +93,10 @@ export default function WishFriend({ fixedType }: { fixedType?: "ugc_video" } = 
   const { balance, refetch: refetchWallet } = useWalletBalance();
   const { discountPercentage, getDiscountedPrice } = usePlanDiscount();
 
-  const [step, setStep] = useState<Step>(fixedType ? "celebrity" : "type");
+  const [step, setStep] = useState<Step>(fixedType ? "details" : "type");
   const [wishType, setWishType] = useState<Exclude<WishType, "greeting_card">>(fixedType ?? "video_wish");
-  const [celebrities, setCelebrities] = useState<Celebrity[]>([]);
-  const [loadingCelebs, setLoadingCelebs] = useState(false);
-  const [search, setSearch] = useState("");
+  // Only celebrities the user has subscribed to can be chosen, as chips on the details screen.
+  const subscribed = useSubscribedCelebrities<Celebrity>("id, name, category, image_url, delivery_time, service_prices");
   const [celebrity, setCelebrity] = useState<Celebrity | null>(null);
   const [ugcFallbackPrice, setUgcFallbackPrice] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -121,30 +122,6 @@ export default function WishFriend({ fixedType }: { fixedType?: "ugc_video" } = 
       .then(({ data }) => setUgcFallbackPrice(parseInt(data?.setting_value ?? "0", 10) || 0));
   }, []);
 
-  useEffect(() => {
-    if (step !== "celebrity") return;
-    const timer = setTimeout(async () => {
-      setLoadingCelebs(true);
-      let query = supabase
-        .from("celebrities")
-        .select("id, name, category, image_url, delivery_time, service_prices")
-        .eq("is_active", true)
-        .or("consent_status.neq.rejected,consent_status.is.null")
-        .order("name")
-        .limit(48);
-      const term = search.trim().replace(/[%,()]/g, " ");
-      if (term) query = query.ilike("name", `%${term}%`);
-      const { data, error } = await query;
-      if (error) {
-        toast({ title: "Could not load celebrities", description: error.message, variant: "destructive" });
-      } else {
-        setCelebrities((data as unknown as Celebrity[]) ?? []);
-      }
-      setLoadingCelebs(false);
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [step, search, toast]);
-
   const basePriceFor = (c: Celebrity | null) => {
     if (!c) return 0;
     if (wishType === "video_wish") return c.service_prices?.general_wish ?? 0;
@@ -156,8 +133,8 @@ export default function WishFriend({ fixedType }: { fixedType?: "ugc_video" } = 
   const typeLabel = wishType === "video_wish" ? "Video Wish" : "UGC Video";
 
   const detailsValid = useMemo(
-    () => recipientName.trim() && occasion && prompt.trim().length >= 10,
-    [recipientName, occasion, prompt],
+    () => !!celebrity && basePrice > 0 && !!recipientName.trim() && !!occasion && prompt.trim().length >= 10,
+    [celebrity, basePrice, recipientName, occasion, prompt],
   );
 
   const uploadReferenceImage = async (file: File) => {
@@ -186,12 +163,11 @@ export default function WishFriend({ fixedType }: { fixedType?: "ugc_video" } = 
       return;
     }
     setWishType(type);
-    setStep("celebrity");
+    setStep("details");
   };
 
   const goBack = () => {
-    if (step === "celebrity") { if (fixedType) navigate(-1); else setStep("type"); }
-    else if (step === "details") setStep("celebrity");
+    if (step === "details") { if (fixedType) navigate(-1); else setStep("type"); }
     else if (step === "review") setStep("details");
   };
 
@@ -235,7 +211,7 @@ export default function WishFriend({ fixedType }: { fixedType?: "ugc_video" } = 
   };
 
   const reset = () => {
-    setStep(fixedType ? "celebrity" : "type");
+    setStep(fixedType ? "details" : "type");
     setCelebrity(null);
     setRecipientName("");
     setOccasion("");
@@ -329,66 +305,29 @@ export default function WishFriend({ fixedType }: { fixedType?: "ugc_video" } = 
           </div>
         )}
 
-        {step === "celebrity" && (
-          <div className="space-y-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                className="pl-10"
-                placeholder="Search celebrities"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-            {loadingCelebs ? (
-              <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
-            ) : celebrities.length === 0 ? (
-              <p className="text-center text-muted-foreground py-12">No celebrities found</p>
-            ) : (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {celebrities.map((c) => {
-                  const p = basePriceFor(c);
-                  const unavailable = p <= 0;
-                  return (
-                    <Card
-                      key={c.id}
-                      className={`overflow-hidden transition-all ${unavailable ? "opacity-50" : "cursor-pointer hover:shadow-lg hover:border-primary"}`}
-                      onClick={() => {
-                        if (unavailable) return;
-                        setCelebrity(c);
-                        setStep("details");
-                      }}
-                    >
-                      <img
-                        src={c.image_url || "/placeholder.svg"}
-                        alt={c.name}
-                        className="w-full h-32 md:h-40 object-cover"
-                        loading="lazy"
-                      />
-                      <CardContent className="p-3">
-                        <p className="font-semibold text-sm truncate">{c.name}</p>
-                        <p className="text-xs text-muted-foreground truncate">{c.category}</p>
-                        <p className="text-sm font-bold text-primary mt-1">
-                          {unavailable ? "Not available" : `₹${getDiscountedPrice(p).toLocaleString()}`}
-                        </p>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {step === "details" && celebrity && (
+        {step === "details" && (
           <Card>
             <CardHeader>
               <CardTitle>Tell us about your friend</CardTitle>
               <CardDescription>
-                {typeLabel} with {celebrity.name}
+                {typeLabel}{celebrity ? ` with ${celebrity.name}` : ""}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Select Celebrity *</Label>
+                <SubscribedCelebrityChips<Celebrity>
+                  celebrities={subscribed.celebrities}
+                  loading={subscribed.loading}
+                  hasNone={subscribed.hasNone}
+                  selectedId={celebrity?.id}
+                  onSelect={(c) => setCelebrity(c)}
+                  priceFor={(c) => {
+                    const base = basePriceFor(c);
+                    return base > 0 ? getDiscountedPrice(base) : null;
+                  }}
+                />
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="wf-name">Friend's name *</Label>
                 <Input id="wf-name" value={recipientName} onChange={(e) => setRecipientName(e.target.value)} placeholder="e.g. Priya" />

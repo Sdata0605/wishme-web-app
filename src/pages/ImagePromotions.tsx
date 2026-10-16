@@ -7,6 +7,7 @@ import { usePlanDiscount } from "@/hooks/usePlanDiscount";
 import { useCelebrityFavorites } from "@/hooks/useCelebrityFavorites";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { SubscribedCelebrityChips } from "@/components/celebrity/SubscribedCelebrityChips";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -42,7 +43,10 @@ export default function ImagePromotions() {
   const [referenceImage, setReferenceImage] = useState<string | null>(null);
   const [referenceImageSource, setReferenceImageSource] = useState<string>('none');
 
-  const imagePrice = getDiscountedPrice(baseImagePrice);
+  // The price the admin set on the chosen celebrity wins; the platform price is only the fallback.
+  // This is the same rule the server charges by.
+  const chosenCelebPrice = Number((celebrities.find((c: any) => c.id === selectedCelebrity) as any)?.service_prices?.image_promotion);
+  const imagePrice = getDiscountedPrice(chosenCelebPrice > 0 ? chosenCelebPrice : baseImagePrice);
 
   useEffect(() => {
     loadData();
@@ -116,7 +120,7 @@ export default function ImagePromotions() {
       // Only load celebrities the user is subscribed to
       const { data: celebsData } = await supabase
         .from('celebrities')
-        .select('id, name, category, avatar_trained, image_url')
+        .select('id, name, category, avatar_trained, image_url, service_prices')
         .eq('is_active', true)
         .eq('avatar_trained', true)
         .in('id', favorites)
@@ -378,19 +382,15 @@ export default function ImagePromotions() {
               {/* Celebrity Selection */}
               <div className="space-y-2">
                 <Label htmlFor="celebrity">Select Celebrity *</Label>
-                <Select value={selectedCelebrity} onValueChange={setSelectedCelebrity}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a celebrity" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {celebrities.map(celeb => (
-                      <SelectItem key={celeb.id} value={celeb.id}>
-                        {celeb.name} - {celeb.category}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {celebrities.length === 0 && (
+                <SubscribedCelebrityChips
+                  celebrities={celebrities}
+                  loading={false}
+                  hasNone={favorites.length === 0}
+                  selectedId={selectedCelebrity}
+                  onSelect={(c) => setSelectedCelebrity(c?.id ?? "")}
+                  emptyText="Subscribe to a celebrity to create promotions."
+                />
+                {favorites.length > 0 && celebrities.length === 0 && (
                   <p className="text-xs text-muted-foreground">No celebrities with trained avatars available yet</p>
                 )}
               </div>

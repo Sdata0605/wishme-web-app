@@ -16,7 +16,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useWalletBalance } from '@/hooks/useWalletBalance';
 import { usePlanDiscount } from '@/hooks/usePlanDiscount';
 import { AuthenticatedLayout } from '@/components/layout/AuthenticatedLayout';
-import { CelebrityCallModal } from '@/components/celebrity/CelebrityCallModal';
+import { useSubscribedCelebrities } from '@/hooks/useSubscribedCelebrities';
+import { SubscribedCelebrityChips } from '@/components/celebrity/SubscribedCelebrityChips';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 
@@ -89,7 +90,8 @@ export default function CelebrityVoiceCall() {
   const { discountPercentage, planName, getDiscountedPrice } = usePlanDiscount();
 
   const [isLoading, setIsLoading] = useState(false);
-  const [showCelebrityModal, setShowCelebrityModal] = useState(false);
+  // Only celebrities the user has subscribed to (and who have a voice to call with) can be chosen.
+  const subscribed = useSubscribedCelebrities<Celebrity>('id, name, category, image_url, vapi_voice_id, voice_call_price, rating, is_verified, vapi_phone_id');
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
   const [recipientName, setRecipientName] = useState('');
@@ -116,8 +118,6 @@ export default function CelebrityVoiceCall() {
     const celebrityId = searchParams.get('celebrityId');
     if (celebrityId && profile?.id) {
       fetchCelebrityById(celebrityId);
-    } else {
-      setShowCelebrityModal(true);
     }
   }, [user, profile, navigate, searchParams, authLoading]);
 
@@ -136,12 +136,9 @@ export default function CelebrityVoiceCall() {
       } else if (celebResult.data && !subResult.data) {
         toast({ title: 'Subscription required', description: `You need to subscribe to ${celebResult.data.name} before placing a call.`, variant: 'destructive' });
         navigate(`/celebrity/${celebrityId}`);
-      } else {
-        setShowCelebrityModal(true);
       }
     } catch (error) {
       console.error('Error fetching celebrity:', error);
-      setShowCelebrityModal(true);
     }
   };
 
@@ -291,42 +288,36 @@ export default function CelebrityVoiceCall() {
                     <span className="text-sm font-semibold text-white">Select a Celebrity</span>
                   </div>
 
-                  {selectedCelebrity ? (
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.04] border border-pink-500/20">
-                        <Avatar className="h-10 w-10 border border-pink-500/30">
-                          <AvatarImage src={selectedCelebrity.image_url || undefined} alt={selectedCelebrity.name} />
-                          <AvatarFallback className="bg-pink-500/20 text-pink-400 text-sm font-bold">
-                            {selectedCelebrity.name.charAt(0)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-sm font-semibold text-white truncate">{selectedCelebrity.name}</span>
-                            {selectedCelebrity.is_verified && (
-                              <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center shrink-0">
-                                <span className="text-[8px] text-white">✓</span>
-                              </div>
-                            )}
-                          </div>
-                          <span className="text-[11px] text-white/40">₹{selectedCelebrity.voice_call_price || 500} per call</span>
+                  <SubscribedCelebrityChips<Celebrity>
+                    celebrities={subscribed.celebrities.filter((c) => !!c.vapi_voice_id)}
+                    loading={subscribed.loading}
+                    hasNone={subscribed.hasNone}
+                    selectedId={selectedCelebrity?.id}
+                    onSelect={(c) => setSelectedCelebrity(c)}
+                    priceFor={(c) => getDiscountedPrice(c.voice_call_price || 500)}
+                    emptyText="Subscribe to a celebrity to send a voice call."
+                  />
+
+                  {selectedCelebrity && (
+                    <div className="mt-3 flex items-center gap-3 p-3 rounded-xl bg-white/[0.04] border border-pink-500/20">
+                      <Avatar className="h-10 w-10 border border-pink-500/30">
+                        <AvatarImage src={selectedCelebrity.image_url || undefined} alt={selectedCelebrity.name} />
+                        <AvatarFallback className="bg-pink-500/20 text-pink-400 text-sm font-bold">
+                          {selectedCelebrity.name.charAt(0)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-semibold text-white truncate">{selectedCelebrity.name}</span>
+                          {selectedCelebrity.is_verified && (
+                            <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center shrink-0">
+                              <span className="text-[8px] text-white">✓</span>
+                            </div>
+                          )}
                         </div>
+                        <span className="text-[11px] text-white/40">₹{selectedCelebrity.voice_call_price || 500} per call</span>
                       </div>
-                      <button
-                        onClick={() => setShowCelebrityModal(true)}
-                        className="w-full text-xs text-white/40 hover:text-pink-400 transition-colors flex items-center justify-center gap-1 py-1"
-                      >
-                        View All Artists <ArrowRight className="w-3 h-3" />
-                      </button>
                     </div>
-                  ) : (
-                    <button
-                      onClick={() => setShowCelebrityModal(true)}
-                      className="w-full py-6 rounded-xl border border-dashed border-white/10 hover:border-pink-500/30 hover:bg-white/[0.02] transition-all flex flex-col items-center gap-2"
-                    >
-                      <Phone className="w-6 h-6 text-white/30" />
-                      <span className="text-xs text-white/40">Tap to select a celebrity</span>
-                    </button>
                   )}
                 </div>
 
@@ -605,12 +596,6 @@ export default function CelebrityVoiceCall() {
         </section>
       </div>
 
-      <CelebrityCallModal
-        open={showCelebrityModal}
-        onOpenChange={setShowCelebrityModal}
-        onSelectCelebrity={setSelectedCelebrity}
-        profileId={profile?.id}
-      />
     </AuthenticatedLayout>
   );
 }
