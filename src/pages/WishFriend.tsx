@@ -79,15 +79,20 @@ const HOW_IT_WORKS = [
   "Our team makes it and delivers it to My Bookings.",
 ];
 
-export default function WishFriend() {
+/**
+ * Wish a Friend, and (with `fixedType`) the UGC Videos page: the same order flow, which starts at the
+ * celebrity step. The user pays, the order goes to the admin, the admin uploads the finished video and,
+ * when the order is completed, the chosen celebrity is paid their cut.
+ */
+export default function WishFriend({ fixedType }: { fixedType?: "ugc_video" } = {}) {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user, profile } = useAuth();
   const { balance, refetch: refetchWallet } = useWalletBalance();
   const { discountPercentage, getDiscountedPrice } = usePlanDiscount();
 
-  const [step, setStep] = useState<Step>("type");
-  const [wishType, setWishType] = useState<Exclude<WishType, "greeting_card">>("video_wish");
+  const [step, setStep] = useState<Step>(fixedType ? "celebrity" : "type");
+  const [wishType, setWishType] = useState<Exclude<WishType, "greeting_card">>(fixedType ?? "video_wish");
   const [celebrities, setCelebrities] = useState<Celebrity[]>([]);
   const [loadingCelebs, setLoadingCelebs] = useState(false);
   const [search, setSearch] = useState("");
@@ -185,7 +190,7 @@ export default function WishFriend() {
   };
 
   const goBack = () => {
-    if (step === "celebrity") setStep("type");
+    if (step === "celebrity") { if (fixedType) navigate(-1); else setStep("type"); }
     else if (step === "details") setStep("celebrity");
     else if (step === "review") setStep("details");
   };
@@ -230,7 +235,7 @@ export default function WishFriend() {
   };
 
   const reset = () => {
-    setStep("type");
+    setStep(fixedType ? "celebrity" : "type");
     setCelebrity(null);
     setRecipientName("");
     setOccasion("");
@@ -253,9 +258,13 @@ export default function WishFriend() {
               <span className="inline-flex items-center gap-2 rounded-full bg-white/20 px-3 py-1 text-xs font-medium mb-4">
                 <Sparkles className="w-3.5 h-3.5" /> Wish a Friend
               </span>
-              <h1 className="text-3xl md:text-5xl font-bold leading-tight mb-3">Make your friend's day unforgettable</h1>
+              <h1 className="text-3xl md:text-5xl font-bold leading-tight mb-3">
+                {fixedType ? "UGC Videos with a celebrity" : "Make your friend's day unforgettable"}
+              </h1>
               <p className="text-white/90 text-base md:text-lg">
-                Send a greeting card or a personalised video wish. Choose a style, tell us about your friend, and we handle the rest.
+                {fixedType
+                  ? "Pick a celebrity, tell us about your video, and our team makes it and delivers it to My Bookings."
+                  : "Send a greeting card or a personalised video wish. Choose a style, tell us about your friend, and we handle the rest."}
               </p>
               <Button variant="secondary" size="sm" className="mt-6" onClick={() => navigate("/bookings?tab=wish-friend")}>
                 <ShoppingBag className="w-4 h-4 mr-2" /> My Wish a Friend orders

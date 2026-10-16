@@ -66,7 +66,6 @@ const BillPayFlow = lazyRetry(() => import("./pages/superapp/BillPayFlow"));
 const RechargePage = lazyRetry(() => import("./pages/superapp/RechargePage"));
 const GreetingCards = lazyRetry(() => import("./pages/GreetingCards"));
 const ImagePromotions = lazyRetry(() => import("./pages/ImagePromotions"));
-const UGCVideos = lazyRetry(() => import("./pages/UGCVideos"));
 const WishFriend = lazyRetry(() => import("./pages/WishFriend"));
 const UGCAds = lazyRetry(() => import("./pages/UGCAds"));
 const OccasionWishes = lazyRetry(() => import("./pages/OccasionWishes"));
@@ -262,7 +261,7 @@ const App = () => {
             <Route path="/commission" element={<Navigate to="/dashboard" replace />} />
             <Route path="/greeting-cards" element={<GreetingCards />} />
             <Route path="/image-promotions" element={<ImagePromotions />} />
-            <Route path="/ugc-videos" element={<UGCVideos />} />
+            <Route path="/ugc-videos" element={<WishFriend fixedType="ugc_video" />} />
             <Route path="/wish-friend" element={<WishFriend />} />
             <Route path="/ugc-ads" element={<UGCAds />} />
             <Route path="/occasion-wishes" element={<OccasionWishes />} />

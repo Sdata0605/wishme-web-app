@@ -42,6 +42,9 @@ const SOURCES: { key: string; label: string }[] = [
   { key: "image_promotion", label: "Image promotions (AI)" },
   { key: "voice_call", label: "Voice calls" },
   { key: "wish_celebrity_order", label: "Wish a Celebrity" },
+  { key: "wish_friend_video_wish", label: "Wish a Friend: video wish" },
+  { key: "wish_friend_ugc_video", label: "UGC videos" },
+  { key: "ugc_ad", label: "UGC ads" },
   { key: "subscription", label: "Subscriptions" },
   { key: "other", label: "Other" },
 ];
@@ -108,6 +111,7 @@ export function CelebrityCommissionPanel({
     { label: "General wish (video)", price: Number(prices.general_wish ?? 0) },
     { label: "Image promotion", price: Number(prices.image_promotion ?? 0) },
     { label: "Video promotion", price: Number(prices.video_promotion ?? 0) },
+    { label: "UGC video / ad", price: Number(prices.ugc_ad ?? 0) },
     { label: "Voice call (per call)", price: Number(celebrity.voice_call_price ?? 0) },
   ];
 
@@ -131,7 +135,7 @@ export function CelebrityCommissionPanel({
           onChange={(e) => onCommissionChange(Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
         />
         <p className="text-xs text-muted-foreground mt-1">
-          Applies to video wishes, image and video promotions, voice calls and Wish a Celebrity orders. The platform keeps the rest.
+          Applies to video wishes, image and video promotions, voice calls, Wish a Celebrity, Wish a Friend and UGC video/ad orders (paid when the admin completes the order). The platform keeps the rest.
         </p>
       </div>
 
