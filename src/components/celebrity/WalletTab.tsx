@@ -91,70 +91,51 @@ export function WalletTab({ celebrityId, stats, availableBalance = 0 }: WalletTa
     }
   }, [celebrityId]);
 
+  /** What an earning was for, from the ledger's order type (older rows carry a booking instead). */
+  const SERVICE_LABELS: Record<string, string> = {
+    booking: 'booking',
+    image_promotion: 'image promotion',
+    voice_call: 'voice call',
+    wish_celebrity_order: 'wish a celebrity',
+    wish_friend_video_wish: 'wish a friend: video wish',
+    wish_friend_ugc_video: 'UGC video',
+    ugc_ad: 'UGC ad',
+    subscription: 'subscription',
+  };
+
   const fetchTransactions = async () => {
     try {
+      // The earnings ledger is the single source of truth: every credited order is a row here.
+      // (No joined `bookings` table: the ledger also holds voice calls, UGC, images and subscriptions,
+      // which are not bookings, so that link no longer exists.)
       const { data: walletData, error: walletError } = await supabase
         .from('celebrity_wallet_transactions')
-        .select(`
-          *,
-          bookings (
-            id,
-            service_type,
-            final_price,
-            user_id,
-            profiles!bookings_user_id_fkey (
-              first_name,
-              last_name,
-              email
-            )
-          )
-        `)
+        .select('*')
         .eq('celebrity_id', celebrityId)
         .order('created_at', { ascending: false });
 
       if (walletError) throw walletError;
-      
-      const { data: promotionsData, error: promotionsError } = await supabase
-        .from('image_promotions')
-        .select(`
-          id,
-          price_paid,
-          status,
-          created_at,
-          concept,
-          profiles!image_promotions_user_id_fkey (
-            first_name,
-            last_name,
-            email
-          )
-        `)
-        .eq('celebrity_id', celebrityId)
-        .eq('status', 'completed')
-        .order('created_at', { ascending: false });
 
-      if (promotionsError) throw promotionsError;
+      // Older rows come from bookings; look those up so the customer's name still shows.
+      const rows = (walletData || []) as any[];
+      const bookingIds = rows.filter((r) => !r.order_type || r.order_type === 'booking').map((r) => r.booking_id).filter(Boolean);
+      const bookingsById = new Map<string, any>();
+      if (bookingIds.length > 0) {
+        const { data: bookingRows } = await supabase
+          .from('bookings')
+          .select('id, service_type, final_price, user_id, profiles!bookings_user_id_fkey (first_name, last_name, email)')
+          .in('id', bookingIds);
+        (bookingRows || []).forEach((b: any) => bookingsById.set(b.id, b));
+      }
 
-      const allTransactions = [
-        ...(walletData || []),
-        ...(promotionsData || []).map(promo => ({
-          id: promo.id,
-          amount: Math.floor(promo.price_paid * 0.7),
-          commission_percentage: 70,
-          platform_fee: Math.floor(promo.price_paid * 0.3),
-          status: 'completed',
-          created_at: promo.created_at,
-          booking_id: promo.id,
-          description: 'Image Promotion Commission',
-          transaction_type: 'earning',
-          bookings: {
-            id: promo.id,
-            service_type: 'image_promotion',
-            final_price: promo.price_paid,
-            user_id: '',
-            profiles: promo.profiles
-          }
+      const allTransactions = rows
+        .map((r) => ({
+          ...r,
+          bookings:
+            bookingsById.get(r.booking_id) ??
+            { id: r.booking_id, service_type: SERVICE_LABELS[r.order_type] ?? r.order_type ?? 'service', final_price: r.gross_amount ?? r.amount, user_id: '', profiles: null },
         }))
-      ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
       setTransactions(allTransactions);
     } catch (error) {

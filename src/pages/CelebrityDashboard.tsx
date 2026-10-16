@@ -156,10 +156,17 @@ export default function CelebrityDashboard() {
       const txEarnings = (txData || []).reduce((sum, tx) => sum + (tx.amount || 0), 0);
       const effectiveTotalEarnings = Math.max(activeCeleb?.total_earnings || 0, txEarnings, totalBookingsEarnings);
 
+      // Orders of every kind, not just bookings: Wish a Friend, UGC videos/ads and image promotions too.
+      const countOf = async (table: string) => {
+        const { count } = await supabase.from(table as any).select('id', { count: 'exact', head: true }).eq('celebrity_id', celebrityId);
+        return count || 0;
+      };
+      const [friendCount, adCount, imageCount] = await Promise.all([countOf('wish_friend_orders'), countOf('ugc_ads'), countOf('image_promotions')]);
+
       setStats({
         totalEarnings: effectiveTotalEarnings,
         pendingEarnings,
-        totalBookings: bookingsData?.length || 0,
+        totalBookings: (bookingsData?.length || 0) + friendCount + adCount + imageCount,
         rating: activeCeleb?.rating || 0,
         reviewCount: activeCeleb?.review_count || 0
       });

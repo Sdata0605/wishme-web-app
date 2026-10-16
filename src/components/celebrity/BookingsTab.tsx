@@ -60,6 +60,8 @@ interface ImagePromotion {
 export function BookingsTab({ celebrityId }: BookingsTabProps) {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [imagePromotions, setImagePromotions] = useState<ImagePromotion[]>([]);
+  // Wish a Friend, UGC video and UGC ad orders: the admin makes the video; the celebrity is paid when it is completed.
+  const [friendOrders, setFriendOrders] = useState<Array<{ id: string; label: string; title: string; customer: string; price: number; status: string; created_at: string; earned?: number }>>([]);
   const [loading, setLoading] = useState(true);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [selectedPromotion, setSelectedPromotion] = useState<ImagePromotion | null>(null);
@@ -112,6 +114,52 @@ export function BookingsTab({ celebrityId }: BookingsTabProps) {
 
       if (promotionsError) throw promotionsError;
       setImagePromotions(promotionsData || []);
+
+      const { data: wfData } = await supabase
+        .from('wish_friend_orders' as any)
+        .select('id, order_type, recipient_name, occasion, price_paid, status, created_at, profiles!wish_friend_orders_user_id_fkey (first_name, last_name)')
+        .eq('celebrity_id', celebrityId)
+        .order('created_at', { ascending: false });
+      const { data: uaData } = await supabase
+        .from('ugc_ads' as any)
+        .select('id, product_name, price_paid, status, created_at')
+        .eq('celebrity_id', celebrityId)
+        .order('created_at', { ascending: false });
+
+      const merged = [
+        ...((wfData as any[]) || []).map((o) => ({
+          id: o.id as string,
+          label: o.order_type === 'ugc_video' ? 'UGC video' : 'Video wish',
+          title: `${o.recipient_name ?? 'Friend'}${o.occasion ? ` - ${o.occasion}` : ''}`,
+          customer: `${o.profiles?.first_name ?? ''} ${o.profiles?.last_name ?? ''}`.trim() || 'Customer',
+          price: Number(o.price_paid ?? 0),
+          status: o.status as string,
+          created_at: o.created_at as string,
+        })),
+        ...((uaData as any[]) || []).map((o) => ({
+          id: o.id as string,
+          label: 'UGC ad',
+          title: (o.product_name as string) ?? 'UGC ad',
+          customer: 'Customer',
+          price: Number(o.price_paid ?? 0),
+          status: o.status as string,
+          created_at: o.created_at as string,
+        })),
+      ] as Array<{ id: string; label: string; title: string; customer: string; price: number; status: string; created_at: string; earned?: number }>;
+
+      if (merged.length > 0) {
+        // What the celebrity was actually paid on each order comes from the earnings ledger.
+        const { data: ledger } = await supabase
+          .from('celebrity_wallet_transactions')
+          .select('booking_id, amount')
+          .eq('celebrity_id', celebrityId)
+          .eq('transaction_type', 'earning')
+          .in('booking_id', merged.map((o) => o.id));
+        const earned = new Map((ledger || []).map((l: any) => [l.booking_id as string, Number(l.amount)]));
+        merged.forEach((o) => { if (earned.has(o.id)) o.earned = earned.get(o.id); });
+      }
+      merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      setFriendOrders(merged);
       
       // Subscribe to booking updates for real-time updates
       const bookingSubscription = supabase
@@ -124,6 +172,18 @@ export function BookingsTab({ celebrityId }: BookingsTabProps) {
         )
         .on('postgres_changes', 
           { event: 'UPDATE', schema: 'public', table: 'image_promotions', filter: `celebrity_id=eq.${celebrityId}` },
+          () => {
+            fetchAllOrders();
+          }
+        )
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'wish_friend_orders', filter: `celebrity_id=eq.${celebrityId}` },
+          () => {
+            fetchAllOrders();
+          }
+        )
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'ugc_ads', filter: `celebrity_id=eq.${celebrityId}` },
           () => {
             fetchAllOrders();
           }
@@ -225,7 +285,7 @@ export function BookingsTab({ celebrityId }: BookingsTabProps) {
     );
   }
 
-  const totalOrders = bookings.length + imagePromotions.length;
+  const totalOrders = bookings.length + imagePromotions.length + friendOrders.length;
 
   return (
     <>
@@ -284,6 +344,36 @@ export function BookingsTab({ celebrityId }: BookingsTabProps) {
                     </Button>
                   </div>
                   </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Wish a Friend, UGC videos and UGC ads */}
+              {friendOrders.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="font-semibold text-sm text-muted-foreground mt-4">Wish a Friend &amp; UGC Orders</h3>
+                  {friendOrders.map((o) => (
+                    <div key={`${o.label}-${o.id}`} className="flex items-center justify-between p-4 border rounded-lg">
+                      <div className="flex-1">
+                        <p className="font-medium">#{o.id.slice(0, 8)} - {o.customer}</p>
+                        <p className="text-sm text-muted-foreground">{o.label} - {o.title}</p>
+                        <p className="text-xs mt-1 text-muted-foreground">
+                          {o.earned != null ? (
+                            <span className="text-green-600 font-medium">You earned ₹{o.earned.toLocaleString()}</span>
+                          ) : o.status === 'completed' ? (
+                            'Earning is being added'
+                          ) : (
+                            'You are paid when the order is completed'
+                          )}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-medium">₹{o.price.toLocaleString()}</p>
+                        <Badge variant={o.status === 'completed' ? 'default' : o.status === 'rejected' || o.status === 'failed' ? 'destructive' : 'outline'}>
+                          {o.status.replace('_', ' ')}
+                        </Badge>
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}
