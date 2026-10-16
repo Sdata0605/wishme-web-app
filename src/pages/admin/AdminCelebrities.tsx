@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CelebrityCommissionPanel } from "@/components/admin/CelebrityCommissionPanel";
+import { saveCelebrity } from "@/lib/saveCelebrity";
 import { Search, Edit, Star, CheckCircle, XCircle, Plus, Calendar, Upload, Music, Image as ImageIcon, Video, Trash2, Eye, Settings, IndianRupee, Heart, Lock, Key } from "lucide-react";
 
 interface Celebrity {
@@ -538,30 +539,22 @@ export default function AdminCelebrities() {
   };
 
   const updateCelebrity = async (celebrityId: string, updates: Partial<Celebrity>) => {
-    try {
-      // The list row carries the joined `profiles` object, which is not a column of `celebrities`.
-      const { profiles: _joined, ...columns } = updates;
-      const { error } = await supabase
-        .from('celebrities')
-        .update(columns)
-        .eq('id', celebrityId);
-
-      if (error) throw error;
-
-      await fetchCelebrities();
+    const result = await saveCelebrity(celebrityId, updates);
+    if (!result.ok) {
       toast({
-        title: "Success",
-        description: "Celebrity updated successfully"
-      });
-      setEditDialogOpen(false);
-      setEditingCelebrity(null);
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: "Could not update celebrity",
+        title: "Could not save",
+        description: result.message || "The celebrity was not updated.",
         variant: "destructive"
       });
+      return;
     }
+    await fetchCelebrities();
+    toast({
+      title: "Saved",
+      description: "Prices and commission updated. The app and website use them straight away."
+    });
+    setEditDialogOpen(false);
+    setEditingCelebrity(null);
   };
 
   const filteredCelebrities = celebrities.filter(celebrity =>

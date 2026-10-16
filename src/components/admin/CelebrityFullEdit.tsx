@@ -1,3 +1,4 @@
+import { saveCelebrity } from "@/lib/saveCelebrity";
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -115,15 +116,16 @@ export function CelebrityFullEdit({ celebrityId, onSave }: CelebrityFullEditProp
   };
 
   const updateCelebrity = async (updates: any) => {
+    setSaving(true);
     try {
-      setSaving(true);
-      const { error } = await supabase.from('celebrities').update(updates).eq('id', celebrityId);
-      if (error) throw error;
-      toast({ title: "Success", description: "Celebrity updated successfully" });
+      const result = await saveCelebrity(celebrityId, updates);
+      if (!result.ok) {
+        toast({ title: "Could not save", description: result.message || "The celebrity was not updated.", variant: "destructive" });
+        return;
+      }
+      toast({ title: "Saved", description: "Prices and commission updated. The app and website use them straight away." });
       onSave();
       fetchCelebrityData();
-    } catch (error: any) {
-      toast({ title: "Error", description: "Could not update celebrity", variant: "destructive" });
     } finally {
       setSaving(false);
     }
