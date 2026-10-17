@@ -122,7 +122,27 @@ serve(async (req) => {
         description = `Booking for ${(bookingData as any).celebrities?.name || 'Celebrity'} - ${bookingData.service_type || ''}`;
       }
     } else {
-      throw new Error('No valid order ID provided');
+      // Wallet top-ups and plan purchases have no order of ours to update: the app records those itself
+      // once this says the payment is real. The signature above proves the ids belong together; here we
+      // also ask Razorpay that the order was really paid, and for how much.
+      const keyId = Deno.env.get('RAZORPAY_KEY_ID');
+      if (!keyId || !razorpay_order_id) throw new Error('No valid order ID provided');
+      const rzp = await fetch(`https://api.razorpay.com/v1/orders/${razorpay_order_id}`, {
+        headers: { Authorization: `Basic ${btoa(`${keyId}:${keySecret}`)}` },
+      });
+      if (!rzp.ok) throw new Error('Could not confirm the payment with Razorpay');
+      const rzpOrder = await rzp.json();
+      if (rzpOrder.status !== 'paid') throw new Error('This payment has not been completed');
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: 'Payment verified successfully',
+          amount: Math.round((rzpOrder.amount_paid ?? rzpOrder.amount ?? 0) / 100),
+          wishme_payment_id: generateWishMePaymentId(),
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     if (updateError) {
