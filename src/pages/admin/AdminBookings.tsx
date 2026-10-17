@@ -612,7 +612,7 @@ export default function AdminBookings() {
                           <div className="min-w-0 flex-1">
                             <p className="font-medium text-sm truncate">{getCustomerName(order)}</p>
                             <p className="text-xs text-muted-foreground truncate">
-                              {order.order_type === 'ugc_video' ? 'UGC Video' : 'Video Wish'} for {order.recipient_name} · {order.occasion}
+                              {order.order_type === 'ugc_video' ? 'UGC Video' : `Video Wish + Card${order.card_url ? '' : ' (card needed)'}`} for {order.recipient_name} · {order.occasion}
                             </p>
                           </div>
                           {getStatusBadge(order.status)}
@@ -651,7 +651,16 @@ export default function AdminBookings() {
                         <TableRow key={order.id}>
                           <TableCell className="font-mono text-sm">{order.id.substring(0, 8)}...</TableCell>
                           <TableCell>{getCustomerName(order)}</TableCell>
-                          <TableCell><Badge variant="outline">{order.order_type === 'ugc_video' ? 'UGC Video' : 'Video Wish'}</Badge></TableCell>
+                          <TableCell>
+                            <div className="flex flex-col items-start gap-1">
+                              <Badge variant="outline">{order.order_type === 'ugc_video' ? 'UGC Video' : 'Video Wish + Card'}</Badge>
+                              {order.order_type !== 'ugc_video' && (
+                                <span className={`text-[11px] ${order.card_url ? 'text-green-600' : 'text-amber-600'}`}>
+                                  {order.card_url ? 'Card ready' : 'Card needed'}
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
                           <TableCell className="max-w-[180px] truncate">{order.recipient_name} · {order.occasion}</TableCell>
                           <TableCell>{order.celebrities?.name || 'N/A'}</TableCell>
                           <TableCell>₹{order.price_paid?.toLocaleString()}</TableCell>

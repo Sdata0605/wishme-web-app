@@ -11,9 +11,9 @@ const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 /**
- * Admin uploads the finished video for a Wish a Friend order (video wish or UGC video).
- * Verifies the caller is an admin, stores the file in Backblaze B2 and marks the order
- * completed so it shows up with the video in the buyer's My Orders.
+ * Admin uploads the finished video for a Wish a Friend order (video wish or UGC video), or, with kind=card, the
+ * signature card image of a video wish. Verifies the caller is an admin. A video goes to Backblaze B2 and marks the
+ * order completed so it shows up in the buyer's My Orders; a video wish needs its card on the order first.
  */
 const handler = async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") {
@@ -41,19 +41,46 @@ const handler = async (req: Request): Promise<Response> => {
     const file = formData.get("file") as File;
     const orderId = formData.get("order_id") as string;
     const adminNotes = (formData.get("admin_notes") as string) || null;
+    // "card" = the signature card image of a video wish; anything else is the finished video.
+    const kind = (formData.get("kind") as string) === "card" ? "card" : "video";
     if (!file || !orderId) throw new Error("Missing file or order_id");
-
-    if (!file.type.startsWith("video/") && !file.name.match(/\.(mp4|mov|mkv|webm|avi)$/i)) {
-      throw new Error("Invalid file type. Allowed: MP4, MOV, MKV, WebM, AVI");
-    }
 
     const { data: order, error: orderError } = await supabase
       .from("wish_friend_orders")
-      .select("id, status")
+      .select("id, status, order_type, card_url")
       .eq("id", orderId)
       .single();
     if (orderError || !order) throw new Error("Order not found");
     if (order.status === "rejected") throw new Error("This order was rejected");
+
+    if (kind === "card") {
+      if (!file.type.startsWith("image/")) throw new Error("The card must be an image (PNG, JPG or WebP)");
+      if (file.size > 10 * 1024 * 1024) throw new Error("The card image must be under 10 MB");
+      const ext = file.type.includes("jpeg") || file.type.includes("jpg") ? "jpg" : file.type.includes("webp") ? "webp" : "png";
+      const path = `wish-friend-cards/${orderId}-${Date.now()}.${ext}`;
+      const { error: storeError } = await supabase.storage
+        .from("greeting-card-uploads")
+        .upload(path, await file.arrayBuffer(), { contentType: file.type, upsert: false });
+      if (storeError) throw new Error(`Could not save the card: ${storeError.message}`);
+      const cardUrl = supabase.storage.from("greeting-card-uploads").getPublicUrl(path).data.publicUrl;
+      const { error: cardError } = await supabase
+        .from("wish_friend_orders")
+        .update({ card_url: cardUrl, card_source: "upload", card_updated_at: new Date().toISOString() })
+        .eq("id", orderId);
+      if (cardError) throw cardError;
+      return new Response(
+        JSON.stringify({ success: true, card_url: cardUrl }),
+        { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } },
+      );
+    }
+
+    if (!file.type.startsWith("video/") && !file.name.match(/\.(mp4|mov|mkv|webm|avi)$/i)) {
+      throw new Error("Invalid file type. Allowed: MP4, MOV, MKV, WebM, AVI");
+    }
+    // A video wish is delivered with its signature card, so the card has to be ready first.
+    if (order.order_type === "video_wish" && !order.card_url) {
+      throw new Error("Make or upload the signature card first. A video wish is delivered with its card.");
+    }
 
     const B2_KEY_ID = Deno.env.get("B2_KEY_ID")!;
     const B2_APPLICATION_KEY = Deno.env.get("B2_APPLICATION_KEY")!;

@@ -74,7 +74,7 @@ export default function Bookings() {
           break;
         case 'wish-friend':
           result = await supabase.from('wish_friend_orders' as any)
-            .select('id, order_type, status, recipient_name, occasion, relationship, tone, prompt, price_paid, video_url, video_file_key, admin_notes, created_at, completed_at, celebrities:celebrity_id (name, image_url)')
+            .select('id, order_type, status, recipient_name, occasion, relationship, tone, prompt, price_paid, video_url, video_file_key, card_url, card_text, admin_notes, created_at, completed_at, celebrities:celebrity_id (name, image_url)')
             .eq('user_id', profile.id).order('created_at', { ascending: false }).limit(ITEMS_PER_PAGE);
           break;
         case 'wishes':
@@ -490,7 +490,7 @@ export default function Bookings() {
                           <div className="flex-1 w-full">
                             <div className="flex items-start justify-between mb-2 gap-2">
                               <div className="flex-1 min-w-0">
-                                <h3 className="font-semibold text-base md:text-lg truncate">{order.order_type === 'ugc_video' ? 'UGC Video' : 'Video Wish'} · {order.celebrities?.name}</h3>
+                                <h3 className="font-semibold text-base md:text-lg truncate">{order.order_type === 'ugc_video' ? 'UGC Video' : 'Video Wish + Card'} · {order.celebrities?.name}</h3>
                                 <p className="text-xs md:text-sm text-muted-foreground">For {order.recipient_name} · {order.occasion}</p>
                               </div>
                               <Badge variant={order.status === 'rejected' ? 'destructive' : order.status === 'completed' ? 'default' : 'secondary'}>
@@ -504,8 +504,18 @@ export default function Bookings() {
                             {done && (
                               <div className="mt-3 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg space-y-2">
                                 <div className="flex items-center gap-2 text-sm font-medium text-green-700 dark:text-green-300">
-                                  <CheckCircle className="w-4 h-4" /><span>Your Video is Ready!</span>
+                                  <CheckCircle className="w-4 h-4" /><span>{order.card_url ? 'Your video and signed card are ready!' : 'Your Video is Ready!'}</span>
                                 </div>
+                                {order.card_url && (
+                                  <div className="space-y-1">
+                                    <p className="text-xs md:text-sm font-medium">Signed card from {order.celebrities?.name || 'the celebrity'}</p>
+                                    <a href={order.card_url} target="_blank" rel="noreferrer" className="block">
+                                      <img src={order.card_url} alt={`Signed card from ${order.celebrities?.name || 'the celebrity'}`} className="w-full max-w-sm rounded-lg border" loading="lazy" />
+                                    </a>
+                                    <a href={order.card_url} download target="_blank" rel="noreferrer" className="flex items-center gap-1 text-primary hover:underline text-xs md:text-sm"><Download className="w-3.5 h-3.5" />Download card</a>
+                                    <p className="text-xs md:text-sm font-medium pt-2">Video message</p>
+                                  </div>
+                                )}
                                 <B2VideoPlayer fileKey={order.video_file_key || order.video_url} fallbackUrl={order.video_url} className="w-full rounded-lg" />
                                 {order.video_url && (
                                   <a href={order.video_url} download target="_blank" rel="noreferrer" className="flex items-center gap-1 text-primary hover:underline text-xs md:text-sm"><Download className="w-3.5 h-3.5" />Download</a>
@@ -514,7 +524,9 @@ export default function Bookings() {
                             )}
                             {(order.status === 'pending' || order.status === 'processing') && (
                               <div className="mt-3 p-3 bg-primary/5 border border-primary/20 rounded-lg text-xs md:text-sm text-muted-foreground">
-                                Our team is working on your video. It will appear here once it is ready.
+                                {order.order_type === 'ugc_video'
+                                  ? 'Our team is working on your video. It will appear here once it is ready.'
+                                  : 'Our team is making your video and signed card. Both will appear here once they are ready.'}
                               </div>
                             )}
                             {order.status === 'rejected' && (

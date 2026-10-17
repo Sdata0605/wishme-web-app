@@ -66,8 +66,8 @@ const WISH_OPTIONS: { type: WishType; title: string; description: string; icon: 
   },
   {
     type: "video_wish",
-    title: "Video Wish",
-    description: "A personalised video message from a celebrity. Our team makes it and delivers it to My Bookings.",
+    title: "Video Wish + Card",
+    description: "A personalised video from a celebrity, with a greeting card signed by them. Our team makes both and delivers them to My Bookings.",
     icon: Clapperboard,
     tag: "Made by our team",
     cta: "Pick a celebrity",
@@ -130,7 +130,7 @@ export default function WishFriend({ fixedType }: { fixedType?: "ugc_video" } = 
 
   const basePrice = basePriceFor(celebrity);
   const price = getDiscountedPrice(basePrice);
-  const typeLabel = wishType === "video_wish" ? "Video Wish" : "UGC Video";
+  const typeLabel = wishType === "video_wish" ? "Video Wish + Card" : "UGC Video";
 
   const detailsValid = useMemo(
     () => !!celebrity && basePrice > 0 && !!recipientName.trim() && !!occasion && prompt.trim().length >= 10,

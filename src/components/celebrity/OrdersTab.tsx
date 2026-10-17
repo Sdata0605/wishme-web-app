@@ -134,11 +134,12 @@ export function OrdersTab({ celebrityId }: { celebrityId: string | undefined }) 
         addField(fields, "Opening style", x.hook_style);
         addField(fields, "Closing line", x.call_to_action);
         items.push({
-          key: `friend-${x.id}`, id: x.id, label: x.order_type === "ugc_video" ? "UGC video" : "video wish",
+          key: `friend-${x.id}`, id: x.id, label: x.order_type === "ugc_video" ? "UGC video" : "video wish + card",
           title: `${text(x.recipient_name) || "Friend"}${x.occasion ? ` - ${x.occasion}` : ""}`,
           customer: nameOf(x.profiles), price: Number(x.price_paid ?? 0), status: x.status, created_at: x.created_at,
           fields, images: [asImage(x.reference_image_url)].filter(Boolean) as string[],
           videoUrl: isHttp(x.video_url) ? x.video_url : null,
+          cardUrl: isHttp(x.card_url) ? x.card_url : null,
         });
       }
 
@@ -250,6 +251,12 @@ export function OrdersTab({ celebrityId }: { celebrityId: string | undefined }) 
                   {o.images.map((src) => (
                     <img key={src} src={src} alt="Order" className="w-full max-w-md rounded-lg border" loading="lazy" />
                   ))}
+                  {o.cardUrl && (
+                    <div>
+                      <p className="text-xs font-semibold uppercase text-muted-foreground mb-1">The card</p>
+                      <img src={o.cardUrl} alt="Card" className="w-full max-w-sm rounded-lg border" loading="lazy" />
+                    </div>
+                  )}
                   {o.videoUrl && (
                     <video src={o.videoUrl} controls className="w-full max-w-md rounded-lg border" preload="metadata" />
                   )}
