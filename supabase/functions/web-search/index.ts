@@ -2,9 +2,13 @@
  * web-search — the assistant's research.
  *
  * The assistant (Gemini or Sarvam) calls one `web_search` tool with up to three searches and a freshness hint; the phone
- * forwards it here. Tavily reads the web and returns the parts of pages that answer each search, which are shaped into a
- * short, dated, source-named text for the voice model (see tavily.ts). There are no topic categories: whatever the user
- * asks, the model searches for it, reads the result, searches again if it was weak, and answers.
+ * forwards it here. The searching is done by, in this order:
+ *   1. OpenAI's built-in web search (openai.ts): it reads the live web from any site and writes a short, dated,
+ *      source-named answer, which the voice model then speaks. The key is the one an admin saves in the AI Assistant panel.
+ *   2. Tavily (tavily.ts): the parts of pages that answer each search, shaped into the same kind of text.
+ *   3. Keyless sources (Wikipedia, Google News, Bing).
+ * Each one is only a fallback for the one before it, so the assistant is never left without an answer. There are no topic
+ * categories: whatever the user asks, the model searches for it, reads the result, searches again if it was weak, and answers.
  *
  *   POST { queries: string[] (1-3), recency?: 'any'|'day'|'week'|'month', depth?: 'basic'|'advanced' }   (logged-in users only)
  *   POST { query, kind?, location? }      the older shape, still accepted for app builds that have not updated
@@ -28,6 +32,7 @@ import {
   wikipediaProvider,
   type SearchResult,
 } from './providers.ts';
+import { formatOpenAI, looksNotFound, openaiSearch, type OpenAIOutcome, type OpenAISet } from './openai.ts';
 import {
   formatForModel,
   nowLabel,
@@ -51,6 +56,14 @@ const json = (body: unknown, status = 200) =>
 /** Tavily gets this long; the keyless fallback then gets its own, shorter budget. */
 const TAVILY_MS = 7000;
 const FALLBACK_MS = 2500;
+/**
+ * OpenAI reads several pages and writes the answer, so it is given more time (3-5 s is usual). The whole OpenAI step,
+ * including one wider second try when the first found nothing, stays inside OPENAI_TOTAL_MS; the phone waits 17 s.
+ */
+const OPENAI_FIRST_MS = 11_000;
+const OPENAI_TOTAL_MS = 15_000;
+/** A second try is only worth starting when this much of the budget is left. */
+const OPENAI_RETRY_MIN_MS = 5_000;
 
 // ─── Who may call, and how much ──────────────────────────────────────────────
 
@@ -81,12 +94,14 @@ async function userIdFor(req: Request): Promise<string | null> {
 const PER_MINUTE = 30;
 const PER_DAY = 300;
 const CREDITS_PER_DAY = 60;
-const usage = new Map<string, { minute: number[]; day: string; count: number; credits: number }>();
+/** OpenAI searches cost real money per call, so each user gets a daily number; after it Tavily and the keyless sources answer. */
+const OPENAI_PER_DAY = 40;
+const usage = new Map<string, { minute: number[]; day: string; count: number; credits: number; openai: number }>();
 
 function usageOf(uid: string) {
   const today = new Date().toISOString().slice(0, 10);
-  const u = usage.get(uid) ?? { minute: [], day: today, count: 0, credits: 0 };
-  if (u.day !== today) Object.assign(u, { day: today, count: 0, credits: 0 });
+  const u = usage.get(uid) ?? { minute: [], day: today, count: 0, credits: 0, openai: 0 };
+  if (u.day !== today) Object.assign(u, { day: today, count: 0, credits: 0, openai: 0 });
   u.minute = u.minute.filter((t) => Date.now() - t < 60_000);
   if (usage.size > 2000) usage.clear();
   usage.set(uid, u);
@@ -101,6 +116,44 @@ function allow(uid: string, queries: number): boolean {
   for (let i = 0; i < queries; i++) u.minute.push(now);
   u.count += queries;
   return true;
+}
+
+// ─── The OpenAI key, and what to do when it stops working ───────────────────
+
+let openaiKey: { value: string; at: number } | null = null;
+
+/** The key saved in the admin AI Assistant panel (encrypted in Vault) wins; the server secret is the fallback. */
+async function loadOpenAIKey(): Promise<string> {
+  // A missing key is looked for again after 30 s, so a key an admin has just saved is picked up quickly.
+  if (openaiKey && Date.now() - openaiKey.at < (openaiKey.value ? 5 * 60_000 : 30_000)) return openaiKey.value;
+  let value = '';
+  try {
+    const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const { data } = await db.rpc('ai_secret_get', { p_name: 'ai_openai_api_key' });
+    if (typeof data === 'string' && data) value = data;
+  } catch {
+    /* fall back to the server secret */
+  }
+  if (!value) value = Deno.env.get('OPENAI_API_KEY') ?? '';
+  openaiKey = { value, at: Date.now() };
+  return value;
+}
+
+/** The model that searches. An admin can change it without a deploy by setting OPENAI_SEARCH_MODEL on the function. */
+const openaiModel = () => Deno.env.get('OPENAI_SEARCH_MODEL') || undefined;
+
+/** When OpenAI is switched off for this worker: out of credit (an hour) or the key was refused (10 minutes). */
+let openaiOffUntil = 0;
+
+function noteOpenAIFailure(o: Extract<OpenAIOutcome, { ok: false }>) {
+  if (o.code === 'quota') {
+    openaiOffUntil = Date.now() + 3_600_000;
+    console.error(JSON.stringify({ fn: 'web-search', event: 'openai_quota', status: o.status }));
+  } else if (o.code === 'auth') {
+    openaiOffUntil = Date.now() + 600_000;
+    openaiKey = null;
+    console.error(JSON.stringify({ fn: 'web-search', event: 'openai_auth', status: o.status }));
+  }
 }
 
 // ─── The Tavily key, and what to do when it stops working ───────────────────
@@ -150,6 +203,65 @@ function remember(key: string, value: { ttl: number; set: QuerySet; provider: st
 }
 
 // ─── Searching ───────────────────────────────────────────────────────────────
+
+const openaiCache = new Map<string, { at: number; ttl: number; answer: { text: string; sources: string[] } }>();
+
+/**
+ * Asks OpenAI for each query (side by side). When an answer says it found nothing, one wider try follows while the time
+ * budget lasts. Returns null when OpenAI could not be used at all (so Tavily takes over); otherwise the text for the
+ * voice model, with `nothing` set when every answer said it found nothing.
+ */
+async function researchWithOpenAI(uid: string, key: string, queries: string[], recency: Recency, depth: Depth, now: number): Promise<Answer | null> {
+  const started = Date.now();
+  let cachedAll = true;
+  let calls = 0;
+  let failed = false;
+
+  const sets = await Promise.all(
+    queries.map(async (query): Promise<OpenAISet> => {
+      const ck = `${recency}|${query.toLowerCase()}`;
+      const hit = openaiCache.get(ck);
+      if (depth === 'basic' && hit && Date.now() - hit.at < hit.ttl) return { query, recency, answer: hit.answer };
+      cachedAll = false;
+
+      const attempt = async (thorough: boolean, ms: number): Promise<OpenAIOutcome> => {
+        calls++;
+        const o = await openaiSearch(key, query, { recency, thorough, model: openaiModel(), now }, ms);
+        if (!o.ok) {
+          failed = true;
+          noteOpenAIFailure(o);
+          console.error(JSON.stringify({ fn: 'web-search', event: 'openai_failed', code: o.code, status: o.status ?? null, ms: o.ms }));
+        }
+        return o;
+      };
+
+      let o = await attempt(depth === 'advanced', OPENAI_FIRST_MS);
+      // Found nothing: try once more, wider, if there is time (the voice model also searches again by itself).
+      if (o.ok && looksNotFound(o.text) && depth !== 'advanced') {
+        const left = OPENAI_TOTAL_MS - (Date.now() - started);
+        if (left >= OPENAI_RETRY_MIN_MS && Date.now() >= openaiOffUntil) {
+          const again = await attempt(true, left);
+          if (again.ok) o = again;
+        }
+      }
+      if (!o.ok) return { query, recency, answer: null };
+      const answer = { text: o.text, sources: o.sources };
+      openaiCache.set(ck, { at: Date.now(), ttl: looksNotFound(o.text) ? FAILURE_TTL : TTL[recency], answer });
+      if (openaiCache.size > CACHE_MAX) openaiCache.delete(openaiCache.keys().next().value as string);
+      return { query, recency, answer };
+    }),
+  );
+  usageOf(uid).openai += calls;
+
+  if (!sets.some((s) => s.answer)) return failed ? null : { text: formatOpenAI(sets, now), provider: 'openai', credits: 0, cached: false, nothing: true };
+  return {
+    text: formatOpenAI(sets, now),
+    provider: 'openai',
+    credits: 0,
+    cached: cachedAll,
+    nothing: sets.every((s) => !s.answer || looksNotFound(s.answer.text)),
+  };
+}
 
 const asResult = (r: SearchResult): TavilyResult => ({
   title: r.title,
@@ -210,6 +322,13 @@ async function research(uid: string, queries: string[], recency: Recency, depth:
     const w = place ? await weatherProvider(place, lang, FALLBACK_MS) : null;
     if (w?.answer) return { text: `Searched ${nowLabel(now)}.
 ${w.answer}`, provider: w.provider, credits: 0, cached: false, nothing: false };
+  }
+
+  // OpenAI first: it reads the live web from any site and writes the dated, sourced answer the voice model speaks.
+  const oaKey = await loadOpenAIKey();
+  if (oaKey && Date.now() >= openaiOffUntil && usageOf(uid).openai < OPENAI_PER_DAY) {
+    const viaOpenAI = await researchWithOpenAI(uid, oaKey, queries, recency, depth, now);
+    if (viaOpenAI) return viaOpenAI;
   }
 
   const key = await loadTavilyKey();

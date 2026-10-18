@@ -2,7 +2,7 @@
  * ai-assistant-admin — admin-only control of the voice assistant:
  *   status      → active engine, fallback flag, and which API keys are set (last 4 characters only)
  *   set_engine  → choose Gemini or Sarvam (refuses an engine that has no API key)
- *   set_key     → store a Gemini / Sarvam API key encrypted in Supabase Vault (tested first)
+ *   set_key     → store a Gemini / Sarvam / OpenAI API key encrypted in Supabase Vault (tested first)
  *   clear_key   → remove a stored key (the server secret, if any, is used again)
  *   test_key    → check that a key really works (the typed one, or the one currently in use)
  *
@@ -17,10 +17,13 @@ const corsHeaders = {
     'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-type Provider = 'gemini' | 'sarvam';
+// gemini and sarvam are the two voice engines; openai is not an engine: its key powers the assistant's internet search
+// (function web-search), so it can be stored, tested and removed here but never chosen as the voice engine.
+type Provider = 'gemini' | 'sarvam' | 'openai';
 const PROVIDERS: Record<Provider, { vault: string; env: string[]; label: string }> = {
   gemini: { vault: 'ai_gemini_api_key', env: ['GEMINI_API_KEY', 'GOOGLE_GEMINI_API_KEY'], label: 'Google Gemini' },
   sarvam: { vault: 'ai_sarvam_api_key', env: ['SARVAM_API_KEY'], label: 'Sarvam AI' },
+  openai: { vault: 'ai_openai_api_key', env: ['OPENAI_API_KEY'], label: 'OpenAI (internet search)' },
 };
 
 const json = (body: unknown, status = 200) =>
@@ -53,6 +56,18 @@ async function testKey(provider: Provider, key: string): Promise<{ ok: boolean; 
       if (res.ok) return { ok: true, detail: 'Key works and can start live voice sessions.', ms };
       return { ok: false, detail: await explain(res, 'Gemini'), ms };
     }
+    if (provider === 'openai') {
+      // A tiny answer from the same Responses API the search uses (a few tokens, no search call), so a key that is valid
+      // but not allowed to use it, or has no credit, is caught here and not in the middle of a user's question.
+      const res = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'gpt-4.1-mini', input: 'Reply with the word ok.', max_output_tokens: 16, store: false }),
+      });
+      const ms = Date.now() - t0;
+      if (res.ok) return { ok: true, detail: 'Key works. The assistant will use it to search the internet.', ms };
+      return { ok: false, detail: await explain(res, 'OpenAI'), ms };
+    }
     const res = await fetch('https://api.sarvam.ai/v1/chat/completions', {
       method: 'POST',
       headers: { 'api-subscription-key': key, 'Content-Type': 'application/json' },
@@ -73,7 +88,7 @@ async function explain(res: Response, who: string): Promise<string> {
     msg = String(j?.error?.message ?? j?.message ?? j?.error ?? '').slice(0, 160);
   } catch { /* not JSON */ }
   if (res.status === 401 || res.status === 403) return `${who} rejected this key (${res.status}). Check that it is copied correctly. ${msg}`.trim();
-  if (res.status === 429) return `${who} says the quota is used up (429). The key is valid but has no capacity right now. ${msg}`.trim();
+  if (res.status === 429) return `${who} says the quota is used up (429). The key is valid but has no capacity right now (check the billing and limits on the provider's dashboard). ${msg}`.trim();
   return `${who} returned ${res.status}. ${msg}`.trim();
 }
 
@@ -192,7 +207,7 @@ Deno.serve(async (req) => {
         if (!PROVIDERS[provider]) return json({ error: 'Unknown provider.' }, 400);
         const status = await loadStatus();
         // Don't leave the active engine without any key.
-        if (status.engine === provider && status.keys[provider].source === 'database' && !envKey(provider)) {
+        if (provider !== 'openai' && status.engine === provider && status.keys[provider].source === 'database' && !envKey(provider)) {
           return json({ error: `${PROVIDERS[provider].label} is the active engine. Switch to the other engine before removing its only key.` }, 400);
         }
         const { error } = await db.rpc('ai_secret_delete', { p_name: PROVIDERS[provider].vault });

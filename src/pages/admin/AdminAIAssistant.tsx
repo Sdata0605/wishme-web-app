@@ -7,10 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
 import {
-  Bot, CheckCircle2, Eye, EyeOff, KeyRound, Loader2, Mic, ShieldCheck, Sparkles, XCircle, Zap,
+  Bot, CheckCircle2, Eye, EyeOff, Globe, KeyRound, Loader2, Mic, ShieldCheck, Sparkles, XCircle, Zap,
 } from "lucide-react";
 
-type Provider = "gemini" | "sarvam";
+/** The two voice engines an admin can choose between. */
+type Engine = "gemini" | "sarvam";
+/** Every key kept here: the two engines' keys, plus the OpenAI key the assistant's internet search uses. */
+type Provider = Engine | "openai";
 
 interface KeyInfo {
   configured: boolean;
@@ -20,7 +23,7 @@ interface KeyInfo {
 }
 
 interface Status {
-  engine: Provider;
+  engine: Engine;
   fallback: boolean;
   changedAt: string | null;
   keys: Record<Provider, KeyInfo>;
@@ -32,7 +35,7 @@ interface TestResult {
   ms?: number;
 }
 
-const ENGINES: Record<Provider, { name: string; icon: typeof Bot; tagline: string; points: string[]; keyUrl: string }> = {
+const ENGINES: Record<Engine, { name: string; icon: typeof Bot; tagline: string; points: string[]; keyUrl: string }> = {
   gemini: {
     name: "Google Gemini Live",
     icon: Sparkles,
@@ -46,6 +49,19 @@ const ENGINES: Record<Provider, { name: string; icon: typeof Bot; tagline: strin
     tagline: "India-hosted speech-to-text, language model and voice.",
     points: ["Built for Hindi, Hinglish and 11 Indian languages", "Streaming speech, tools and interruptions", "Connects when the user taps (not always-on)"],
     keyUrl: "https://dashboard.sarvam.ai",
+  },
+};
+
+/** What each key is for, shown above its box. The OpenAI key is not a voice engine: it powers the internet search. */
+const KEYS: Record<Provider, { name: string; icon: typeof Bot; keyUrl: string; note?: string }> = {
+  gemini: { name: ENGINES.gemini.name, icon: ENGINES.gemini.icon, keyUrl: ENGINES.gemini.keyUrl },
+  sarvam: { name: ENGINES.sarvam.name, icon: ENGINES.sarvam.icon, keyUrl: ENGINES.sarvam.keyUrl },
+  openai: {
+    name: "OpenAI · internet search",
+    icon: Globe,
+    keyUrl: "https://platform.openai.com/api-keys",
+    note:
+      "When a user asks the assistant about news, a person, a price or anything current, OpenAI searches the web (any site, not only Google) and the voice model speaks the answer, with dates and sources. If this key is missing, out of credit or refused, the assistant quietly falls back to its other search sources. Each search is billed by OpenAI: set a spend limit on your OpenAI account.",
   },
 };
 
@@ -75,7 +91,7 @@ export default function AdminAIAssistant() {
   const [status, setStatus] = useState<Status | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [engine, setEngine] = useState<Provider>("gemini");
+  const [engine, setEngine] = useState<Engine>("gemini");
   const [fallback, setFallback] = useState(true);
   const [savingEngine, setSavingEngine] = useState(false);
 
@@ -150,7 +166,7 @@ export default function AdminAIAssistant() {
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="grid gap-4 md:grid-cols-2" role="radiogroup" aria-label="Voice engine">
-            {(Object.keys(ENGINES) as Provider[]).map((p) => {
+            {(Object.keys(ENGINES) as Engine[]).map((p) => {
               const e = ENGINES[p];
               const selected = engine === p;
               const hasKey = status.keys[p].configured;
@@ -209,7 +225,7 @@ export default function AdminAIAssistant() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {(Object.keys(ENGINES) as Provider[]).map((p) => (
+          {(["gemini", "sarvam", "openai"] as Provider[]).map((p) => (
             <KeyEditor key={p} provider={p} info={status.keys[p]} active={status.engine === p} onChanged={(s) => { setStatus(s); }} />
           ))}
         </CardContent>
@@ -219,7 +235,7 @@ export default function AdminAIAssistant() {
 }
 
 function KeyEditor({ provider, info, active, onChanged }: { provider: Provider; info: KeyInfo; active: boolean; onChanged: (s: Status) => void }) {
-  const e = ENGINES[provider];
+  const e = KEYS[provider];
   const [value, setValue] = useState("");
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState<null | "test" | "save" | "remove">(null);
@@ -277,6 +293,8 @@ function KeyEditor({ provider, info, active, onChanged }: { provider: Provider; 
           {sourceLabel(info)}
         </span>
       </div>
+
+      {e.note && <p className="text-xs text-muted-foreground">{e.note}</p>}
 
       <div className="flex gap-2">
         <div className="relative flex-1">
