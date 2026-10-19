@@ -28,10 +28,11 @@ const LIVE_MODEL = Deno.env.get('GEMINI_LIVE_MODEL') || 'gemini-3.8-live';
 // keep sending messages for 30 minutes (the app reconnects with session resumption).
 const NEW_SESSION_WINDOW_MS = 60 * 1000;
 const SESSION_LIFETIME_MS = 30 * 60 * 1000;
-// A spare token (asked for by the app right after it connects, to use at its next reconnect) may wait up to 20 minutes before its
-// session starts, and then still has at least 40 minutes to run.
-const SPARE_WINDOW_MS = 20 * 60 * 1000;
-const SPARE_LIFETIME_MS = 70 * 60 * 1000;
+// A spare token (asked for by the app right after it connects, and saved on the phone for the next connection) may wait up to 12 hours
+// before its session starts, and then still has at least 7 hours to run. Google allows a token to live for at most 20 hours, so the
+// life is set a little under that (clocks differ by seconds).
+const SPARE_WINDOW_MS = 12 * 60 * 60 * 1000;
+const SPARE_LIFETIME_MS = 19 * 60 * 60 * 1000 + 50 * 60 * 1000;
 
 /**
  * What the admin chose and the API keys change rarely, and reading them was four database round trips, one after the other,
@@ -47,7 +48,9 @@ const json = (body: unknown, status = 200) =>
   });
 
 /** Mints a single-use Live token: POST /v1beta/auth_tokens, exactly what the SDK sends. */
+let lastWindowMs = NEW_SESSION_WINDOW_MS;
 async function mintGeminiToken(apiKey: string, now: number, spare = false): Promise<string> {
+  lastWindowMs = NEW_SESSION_WINDOW_MS;
   if (spare) {
     // Longer-lived: if Google refuses these times, an ordinary token is minted below instead.
     try {
@@ -60,7 +63,10 @@ async function mintGeminiToken(apiKey: string, now: number, spare = false): Prom
       const text = await res.text();
       if (res.ok) {
         const name = (JSON.parse(text) as { name?: string }).name;
-        if (name) return name;
+        if (name) {
+          lastWindowMs = SPARE_WINDOW_MS;
+          return name;
+        }
       }
       console.error('[voice-token] spare token request failed:', res.status, text.slice(0, 200));
     } catch (e) {
@@ -227,7 +233,7 @@ Deno.serve(async (req) => {
 
     const mintStart = Date.now();
     const token = await mintGeminiToken(geminiKey, Date.now(), body?.spare === true);
-    const timing = { auth_ms: mark.auth, auth_mode: authMode, config_ms: mark.config, mint_ms: Date.now() - mintStart, total_ms: Date.now() - startedAt, cold, isolate_age_ms: isolateAgeMs, spare: body?.spare === true };
+    const timing = { auth_ms: mark.auth, auth_mode: authMode, config_ms: mark.config, mint_ms: Date.now() - mintStart, total_ms: Date.now() - startedAt, cold, isolate_age_ms: isolateAgeMs, spare: body?.spare === true, window_ms: lastWindowMs };
     console.log('[voice-token] timing', JSON.stringify(timing));
 
     // The admin's choice rides along, so the app learns which engine is active without a second request.
