@@ -28,6 +28,10 @@ const LIVE_MODEL = Deno.env.get('GEMINI_LIVE_MODEL') || 'gemini-3.8-live';
 // keep sending messages for 30 minutes (the app reconnects with session resumption).
 const NEW_SESSION_WINDOW_MS = 60 * 1000;
 const SESSION_LIFETIME_MS = 30 * 60 * 1000;
+// A spare token (asked for by the app right after it connects, to use at its next reconnect) may wait up to 20 minutes before its
+// session starts, and then still has at least 40 minutes to run.
+const SPARE_WINDOW_MS = 20 * 60 * 1000;
+const SPARE_LIFETIME_MS = 70 * 60 * 1000;
 
 /**
  * What the admin chose and the API keys change rarely, and reading them was four database round trips, one after the other,
@@ -43,7 +47,26 @@ const json = (body: unknown, status = 200) =>
   });
 
 /** Mints a single-use Live token: POST /v1beta/auth_tokens, exactly what the SDK sends. */
-async function mintGeminiToken(apiKey: string, now: number): Promise<string> {
+async function mintGeminiToken(apiKey: string, now: number, spare = false): Promise<string> {
+  if (spare) {
+    // Longer-lived: if Google refuses these times, an ordinary token is minted below instead.
+    try {
+      const res = await fetch('https://generativelanguage.googleapis.com/v1beta/auth_tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify({ uses: 1, expireTime: new Date(now + SPARE_LIFETIME_MS).toISOString(), newSessionExpireTime: new Date(now + SPARE_WINDOW_MS).toISOString() }),
+        signal: AbortSignal.timeout(6000),
+      });
+      const text = await res.text();
+      if (res.ok) {
+        const name = (JSON.parse(text) as { name?: string }).name;
+        if (name) return name;
+      }
+      console.error('[voice-token] spare token request failed:', res.status, text.slice(0, 200));
+    } catch (e) {
+      console.error('[voice-token] spare token request threw:', e);
+    }
+  }
   const config = {
     uses: 1,
     expireTime: new Date(now + SESSION_LIFETIME_MS).toISOString(),
@@ -75,7 +98,48 @@ async function mintGeminiToken(apiKey: string, now: number): Promise<string> {
   return token.name as string;
 }
 
+/**
+ * Checks a login token's signature here, without a round trip to Supabase's auth service. Needs the project's JWT secret as the
+ * function secret WISHME_JWT_SECRET; without it (or when the token does not pass) the caller falls back to the auth service,
+ * which stays the authority, so a forged token is still refused and a rotated secret cannot lock everyone out.
+ * Returns the user id, or null.
+ */
+const b64url = (part: string) => Uint8Array.from(atob(part.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(part.length / 4) * 4, '=')), (c) => c.charCodeAt(0));
+let hmacKey: CryptoKey | null = null;
+let hmacFor = '';
+async function verifyLocally(token: string, supabaseUrl: string): Promise<string | null> {
+  const secret = Deno.env.get('WISHME_JWT_SECRET');
+  if (!secret) return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const header = JSON.parse(new TextDecoder().decode(b64url(parts[0])));
+    if (header.alg !== 'HS256') return null;
+    if (!hmacKey || hmacFor !== secret) {
+      hmacKey = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+      hmacFor = secret;
+    }
+    const signed = await crypto.subtle.verify('HMAC', hmacKey, b64url(parts[2]), new TextEncoder().encode(parts[0] + '.' + parts[1]));
+    if (!signed) return null;
+    const claims = JSON.parse(new TextDecoder().decode(b64url(parts[1])));
+    if (!claims.sub || claims.role !== 'authenticated') return null;
+    if (typeof claims.exp !== 'number' || claims.exp * 1000 < Date.now()) return null;
+    if (claims.iss && !String(claims.iss).startsWith(supabaseUrl)) return null;
+    return String(claims.sub);
+  } catch {
+    return null;
+  }
+}
+
+/** True until this worker has answered its first request (a cold start). */
+let workerWarm = false;
+
 Deno.serve(async (req) => {
+  const startedAt = Date.now();
+  // Milliseconds since this isolate started: on a cold start that is mostly the time spent loading the imports.
+  const isolateAgeMs = Math.round(performance.now());
+  const cold = !workerWarm;
+  workerWarm = true;
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -110,15 +174,34 @@ Deno.serve(async (req) => {
     };
 
     // Everything that does not depend on the other runs at once: the login check (only logged-in users may open a voice
-    // session; the anon key alone is rejected), the request body and the cached configuration.
-    const [authResult, body, config] = await Promise.all([
-      supabase.auth.getUser(),
-      req.json().catch(() => ({})),
-      loadConfig(),
-    ]);
-    const { data: { user }, error: authError } = authResult;
-    if (authError || !user) {
-      return json({ error: 'Unauthorized' }, 401);
+    // session; the anon key alone is rejected) and the cached configuration.
+    const bearer = authHeader.replace(/^Bearer\s+/i, '');
+    const mark = { auth: 0, config: 0 };
+    const timed = async <T>(key: 'auth' | 'config', work: Promise<T>) => {
+      const t = Date.now();
+      try {
+        return await work;
+      } finally {
+        mark[key] = Date.now() - t;
+      }
+    };
+    const body = await req.json().catch(() => ({}));
+    // A keep-warm ping (sent every minute by a schedule): boots this worker and fills its cache, reveals nothing.
+    if (body?.ping === true) {
+      const t = Date.now();
+      await loadConfig();
+      return json({ ok: true, cold, config_ms: Date.now() - t });
+    }
+    const [localUser, config] = await Promise.all([timed('auth', verifyLocally(bearer, supabaseUrl)), timed('config', loadConfig())]);
+    let authMode: 'local' | 'remote' = 'local';
+    if (!localUser) {
+      authMode = 'remote';
+      const t = Date.now();
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      mark.auth += Date.now() - t;
+      if (authError || !user) {
+        return json({ error: 'Unauthorized' }, 401);
+      }
     }
     const supports: string[] = Array.isArray(body?.supports) ? body.supports : ['gemini'];
     const { geminiKey, sarvamKey } = config;
@@ -142,10 +225,20 @@ Deno.serve(async (req) => {
       return json({ engine, relay_url: relayUrl, fallback_engine: fallbackEngine });
     }
 
-    const token = await mintGeminiToken(geminiKey, Date.now());
+    const mintStart = Date.now();
+    const token = await mintGeminiToken(geminiKey, Date.now(), body?.spare === true);
+    const timing = { auth_ms: mark.auth, auth_mode: authMode, config_ms: mark.config, mint_ms: Date.now() - mintStart, total_ms: Date.now() - startedAt, cold, isolate_age_ms: isolateAgeMs, spare: body?.spare === true };
+    console.log('[voice-token] timing', JSON.stringify(timing));
 
     // The admin's choice rides along, so the app learns which engine is active without a second request.
-    return json({ engine, token, model: LIVE_MODEL, fallback_engine: fallbackEngine, relay_url: relayUrl });
+    return new Response(JSON.stringify({ engine, token, model: LIVE_MODEL, fallback_engine: fallbackEngine, relay_url: relayUrl, timing }), {
+      status: 200,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json',
+        'Server-Timing': 'auth;dur=' + timing.auth_ms + ', config;dur=' + timing.config_ms + ', mint;dur=' + timing.mint_ms + ', total;dur=' + timing.total_ms,
+      },
+    });
   } catch (err) {
     console.error('[voice-token] failed:', err);
     return json({ error: 'Could not start voice session' }, 500);
