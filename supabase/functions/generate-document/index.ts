@@ -148,6 +148,62 @@ async function askModel(body: string, apiKey: string): Promise<{ res: Response |
   return { res: null, outOfCredit };
 }
 
+/** The admin panel's saved OpenAI key (the one web search uses) wins; the server secret is the fallback. */
+async function loadOpenAIKey(): Promise<string> {
+  try {
+    const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const { data } = await db.rpc('ai_secret_get', { p_name: 'ai_openai_api_key' });
+    if (typeof data === 'string' && data) return data;
+  } catch { /* fall back to the server secret */ }
+  return Deno.env.get('OPENAI_API_KEY') ?? '';
+}
+
+/** OpenAI is told the JSON shape in words, so the same code serves prose documents and spreadsheets. */
+const SHAPE_HINT = {
+  prose: 'Reply with only a JSON object: {"title": string, "subtitle": string, "sections": [{"heading": string, "body": string}]}. "body" is markdown limited to paragraphs, "- " bullets and **bold**.',
+  sheet: 'Reply with only a JSON object: {"title": string, "sheet": {"columns": [string], "rows": [[string]], "notes": string}}. Every row has one string per column.',
+};
+
+/** Returns the parsed document, or null when OpenAI cannot write it right now (the caller then falls back to Gemini). */
+async function askOpenAI(prompt: string, kind: Kind, length: string, apiKey: string): Promise<Record<string, unknown> | null> {
+  const model = Deno.env.get('OPENAI_DOC_MODEL') || 'gpt-4.1-mini';
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model,
+          temperature: 0.6,
+          max_tokens: length === 'long' ? 8192 : 4096,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: kind === 'spreadsheet' ? SHAPE_HINT.sheet : SHAPE_HINT.prose },
+            { role: 'user', content: prompt },
+          ],
+        }),
+        signal: AbortSignal.timeout(90_000),
+      });
+      if (!res.ok) {
+        console.error(`[generate-document] openai ${model} attempt ${attempt}: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);
+        if (![429, 500, 502, 503].includes(res.status)) return null;
+        await sleep(attempt * 1200);
+        continue;
+      }
+      const raw = (await res.json()).choices?.[0]?.message?.content;
+      const doc = JSON.parse(raw ?? '');
+      const usable = kind === 'spreadsheet'
+        ? Array.isArray(doc?.sheet?.columns) && Array.isArray(doc?.sheet?.rows)
+        : Array.isArray(doc?.sections) && doc.sections.length > 0;
+      if (usable) return doc;
+      console.error('[generate-document] openai returned an unusable shape');
+    } catch (e) {
+      console.error(`[generate-document] openai attempt ${attempt} failed:`, e instanceof Error ? e.message : e);
+    }
+  }
+  return null;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405);
@@ -169,11 +225,26 @@ serve(async (req) => {
     const length = ['short', 'medium', 'long'].includes(body.length) ? body.length : 'medium';
     const language = clean(body.language, 40) || 'English';
 
+    // OpenAI writes the document; Gemini (the assistant) only asks for it. Gemini writes it only if OpenAI is unavailable.
+    const prompt = instructions(kind, topic, audience, length, language);
+    const openaiKey = await loadOpenAIKey();
+    if (openaiKey) {
+      const written = await askOpenAI(prompt, kind, length, openaiKey);
+      if (written) {
+        const title = clean(body.title, 150) || clean(written.title, 150) || topic.slice(0, 80);
+        const words = JSON.stringify(written).split(/\s+/).length;
+        console.log(JSON.stringify({ fn: 'generate-document', engine: 'openai', kind, words }));
+        return json({ ok: true, kind, title, subtitle: clean(written.subtitle, 200) || null, sections: written.sections ?? null, sheet: written.sheet ?? null, wordCount: words });
+      }
+    }
+
     const apiKey = await loadKey('gemini');
-    if (!apiKey) return json({ error: 'Document writing is not set up yet.' }, 503);
+    if (!apiKey && !openaiKey) return json({ error: 'Document writing is not set up yet.' }, 503);
+    if (!apiKey) return json({ error: 'The writing service is busy at the moment. Please try again in a minute.' }, 503);
+    console.error('[generate-document] falling back to Gemini');
 
     const request = JSON.stringify({
-      contents: [{ parts: [{ text: instructions(kind, topic, audience, length, language) }] }],
+      contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.6,
         // Asking for JSON back means the phone never has to parse prose to find the headings.

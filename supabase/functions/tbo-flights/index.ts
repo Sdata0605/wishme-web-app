@@ -18,6 +18,18 @@ function endUserIp(): string {
   return Deno.env.get('TBO_END_USER_IP') || '1.1.1.1';
 }
 
+/** What was sent to TBO and what came back this request; returned with errors so failures can be diagnosed. */
+let exchanges: Array<Record<string, unknown>> = [];
+
+/** Secrets never leave the function: password fully hidden, user name and token shortened. */
+function maskedForDebug(body: Record<string, unknown>) {
+  const out: Record<string, unknown> = { ...body };
+  if (typeof out.Password === 'string') out.Password = `*** (${out.Password.length} chars)`;
+  if (typeof out.UserName === 'string') out.UserName = `${out.UserName.slice(0, 3)}*** (${out.UserName.length} chars)`;
+  if (typeof out.TokenId === 'string') out.TokenId = `${out.TokenId.slice(0, 6)}…`;
+  return out;
+}
+
 async function tboPost(url: string, body: Record<string, unknown>) {
   const res = await fetch(url, {
     method: 'POST',
@@ -25,6 +37,13 @@ async function tboPost(url: string, body: Record<string, unknown>) {
     body: JSON.stringify(body),
   });
   const text = await res.text();
+  const shown = text.replace(/"TokenId"\s*:\s*"[^"]*"/g, '"TokenId":"<hidden>"');
+  exchanges.push({
+    url,
+    request: maskedForDebug(body),
+    httpStatus: res.status,
+    response: shown.length > 1500 ? `${shown.slice(0, 1500)}…` : shown,
+  });
   let json: Record<string, unknown>;
   try {
     json = JSON.parse(text);
@@ -179,6 +198,7 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  exchanges = [];
   try {
     const body = await req.json();
     const action = String(body.action || '').toLowerCase();
@@ -327,7 +347,7 @@ serve(async (req) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'TBO request failed';
     console.error('tbo-flights error:', message);
-    return new Response(JSON.stringify({ success: false, error: message }), {
+    return new Response(JSON.stringify({ success: false, error: message, debug: { tboExchanges: exchanges } }), {
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

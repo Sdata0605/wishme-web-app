@@ -189,13 +189,16 @@ serve(async (req) => {
         console.error('B2 upload error:', uploadError);
       }
 
-      await supabase.from('music_generations').update({
+      // Suno reports a fractional length (e.g. 191.44) but the column is an integer; saving it unrounded
+      // made this update fail, so finished songs stayed "processing" and never reached Saved Songs.
+      const { error: saveError } = await supabase.from('music_generations').update({
         status: 'completed',
         song_url: b2DownloadUrl,
         download_url: b2DownloadUrl,
         completed_at: new Date().toISOString(),
-        duration: duration || null,
+        duration: Number.isFinite(Number(duration)) ? Math.round(Number(duration)) : null,
       }).eq('id', generation_id);
+      if (saveError) console.error('Could not save the finished song:', saveError.message);
 
       // Fire notification: music_generation_completed
       try {
