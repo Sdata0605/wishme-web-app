@@ -12,7 +12,7 @@
 
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { CALL_SUMMARY_PROMPT, OUTCOMES, transcriptToText, type CallBrief, type TranscriptLine } from '../_shared/callPrompt.ts';
-import { callToken, loadKey, type Engine } from '../_shared/vobiz.ts';
+import { callToken, loadKey, vobizConfig, type Engine } from '../_shared/vobiz.ts';
 import { chooseSarvamVoice } from '../_shared/callVoice.ts';
 import { putPrivate } from '../_shared/b2.ts';
 import { GeminiCallBridge } from './gemini.ts';
@@ -171,7 +171,12 @@ async function recordingEnabled(): Promise<boolean> {
 /** Copies the finished recording into our own private storage and points the call row at it. */
 async function storeRecording(callId: string, source: string, seconds: number) {
   try {
-    const res = await fetch(source, { signal: AbortSignal.timeout(60_000) });
+    // Vobiz refuses the download without the account's credentials (401), so they are sent with it.
+    const cfg = vobizConfig();
+    const res = await fetch(source, {
+      signal: AbortSignal.timeout(60_000),
+      headers: cfg ? { 'X-Auth-ID': cfg.authId, 'X-Auth-Token': cfg.authToken } : {},
+    });
     if (!res.ok) throw new Error(`could not download the recording (${res.status})`);
     const bytes = await res.arrayBuffer();
 
@@ -207,9 +212,16 @@ async function runConversation(socket: WebSocket, row: CallRow, done: () => void
   let ended = false;
   let bridge: Bridge | null = null;
   const timers: number[] = [];
+  // Timing for the "how long before it speaks" question: every line shows milliseconds since the stream opened.
+  const t0 = Date.now();
+  const mark = (what: string) => console.log(`[vobiz-call ${row.id.slice(0, 8)}] +${Date.now() - t0} ms ${what}`);
+  let firstAudioSent = false;
+  mark(`stream opened, ${row.started_at ? Date.now() - new Date(row.started_at).getTime() : '?'} ms after answer`);
 
   const client = db();
   let seq = 0;
+  // Starts now, in parallel with the settings lookup below.
+  const userNameP = callerName(row.user_id);
 
   const toPhone = (obj: unknown) => {
     if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(obj));
@@ -228,6 +240,10 @@ async function runConversation(socket: WebSocket, row: CallRow, done: () => void
 
   const events = {
     onSpeak: (mulaw: string, ms: number) => {
+      if (!firstAudioSent) {
+        firstAudioSent = true;
+        mark('first audio sent to the phone');
+      }
       playUntil = Math.max(Date.now(), playUntil) + ms;
       toPhone({ event: 'playAudio', streamId, media: { contentType: 'audio/x-mulaw', sampleRate: 8000, payload: mulaw } });
     },
@@ -283,18 +299,20 @@ async function runConversation(socket: WebSocket, row: CallRow, done: () => void
 
   // Which engine the admin picked, with the other as a fallback if its key is missing.
   const { data: settings } = await client.from('platform_settings').select('setting_key, setting_value').in('setting_key', [
-    'ai_voice_engine', 'ai_voice_fallback', 'ai_call_record',
+    'ai_call_engine', 'ai_voice_fallback', 'ai_call_record',
     'ai_call_sarvam_model', 'ai_call_sarvam_speaker_english', 'ai_call_sarvam_speaker_hindi',
   ]);
   const get = (k: string) => settings?.find((s: { setting_key: string }) => s.setting_key === k)?.setting_value;
+  mark('settings loaded');
 
   const language = (['english', 'hindi', 'hinglish'].includes(row.language) ? row.language : 'english') as CallBrief['language'];
-  const wanted: Engine = get('ai_voice_engine') === 'sarvam' ? 'sarvam' : 'gemini';
+  // Calls have their own engine setting (Sarvam by default, for Indian languages); the in-app assistant keeps ai_voice_engine.
+  const wanted: Engine = get('ai_call_engine') === 'gemini' ? 'gemini' : 'sarvam';
   // The voice is chosen first because its gender decides the Hindi grammar the AI must use.
   const sarvamVoice = chooseSarvamVoice(get, language);
 
   const brief: CallBrief = {
-    userName: await callerName(row.user_id),
+    userName: await userNameP,
     toName: row.to_name ?? '',
     purpose: row.purpose,
     details: row.details ?? '',
@@ -329,6 +347,7 @@ async function runConversation(socket: WebSocket, row: CallRow, done: () => void
     if (!candidate) continue;
     try {
       await candidate.start();
+      mark(`${engine} connected`);
       bridge = candidate;
       console.log(`[vobiz-call ${row.id.slice(0, 8)}] engine: ${engine}${engine === 'sarvam' ? ` (${sarvamVoice.voice.model} / ${sarvamVoice.voice.speaker})` : ''}`);
       break;
@@ -342,7 +361,7 @@ async function runConversation(socket: WebSocket, row: CallRow, done: () => void
 
   // Speak first, then feed in whatever the person said while we were connecting.
   bridge.setInboundFormat(inbound);
-  if (!greeted) { greeted = true; bridge.greet(); }
+  if (!greeted) { greeted = true; bridge.greet(); mark('greeting requested'); }
   for (const a of earlyAudio.splice(0)) bridge.onPhoneAudio(a);
 
   // Keep calls short: ask the AI to wrap up, then hang up.
@@ -403,9 +422,10 @@ Deno.serve(async (req) => {
       return new Response('ok');
 
     case 'answer': {
+      const answerT0 = Date.now();
       if (FINISHED.includes(row.status)) return xml('<Hangup/>');
       await db().from('ai_calls').update({ status: 'in-progress', started_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', row.id);
-      console.log(`[vobiz-call ${row.id.slice(0, 8)}] answered`);
+      console.log(`[vobiz-call ${row.id.slice(0, 8)}] answered (status update took ${Date.now() - answerT0} ms)`);
 
       const base = `${SUPABASE_URL}/functions/v1/vobiz-call`;
       const wss = `${base.replace('https://', 'wss://')}/stream/${row.id}/${token}`;

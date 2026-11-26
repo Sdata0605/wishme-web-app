@@ -75,6 +75,10 @@ verify_jwt = false
 [functions.tbo-hotels]
 verify_jwt = false
 
+# Setu BBPS calls back here without a Supabase login; the function checks x-bbps-webhook-secret.
+[functions.bbps-webhook]
+verify_jwt = false
+
 # Vapi calls this with a shared secret header (x-vapi-secret), not a Supabase login, so the gateway
 # must not demand a JWT. The function itself rejects anything without the right secret.
 [functions.ai-call-webhook]

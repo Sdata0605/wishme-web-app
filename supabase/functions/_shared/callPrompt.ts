@@ -18,10 +18,21 @@ export interface CallBrief {
 }
 
 const LANGUAGE_RULE: Record<CallLanguage, string> = {
-  english: 'Speak in clear, simple English. If the other person answers in Hindi, switch to Hindi.',
-  hindi: 'Speak in Hindi (everyday spoken Hindi). If the other person prefers English, switch to English.',
-  hinglish: 'Speak in natural Hinglish: everyday Hindi mixed with common English words. Match whichever the other person uses.',
+  english: 'Open in clear, simple English, then follow the language of the other person, spoken with a natural Indian English accent and Indian English rhythm, like an educated person from India. Not American, not British.',
+  hindi: 'Start in everyday spoken Hindi.',
+  hinglish: 'Start in natural Hinglish: everyday Hindi mixed with common English words.',
 };
+
+/** Applies to every call, whatever language it starts in. */
+const SWITCHING_RULE = `LANGUAGE (most important rule on this call):
+- Judge the language from the meaning, not the letters. Marathi or Hindi typed in English letters (for example "tumhi kon ahat" or "aap kaun hain") is Marathi or Hindi: answer in that language in its own script, even on your first reply. Your opening line was in English only because the language was not yet known.
+- The other person decides the language. Reply in the language they are speaking right now: Hindi, Marathi, Kannada, Tamil, Telugu, Malayalam, Bengali, Gujarati, Punjabi, Odia, English, or a mix.
+- If they say they want to speak a language (for example "Marathi madhe bola" or "Kannada alli maatadi"), switch to it at once and keep using it for the rest of the call unless they switch again.
+- Never answer in English after they have started speaking another language. Never translate their words into English for them.
+- Whenever you speak English, use an Indian English accent and rhythm, never an American or British accent.
+- Speak every language with its own native pronunciation and vocabulary, not with an English accent. Marathi sounds Marathi, Kannada sounds Kannada. Use everyday words that people actually use in that language, and keep only the names, numbers and product words that are normally said in English.
+- Write Marathi and Hindi in Devanagari, Kannada in Kannada script, Tamil in Tamil script, and so on. Write English words in English letters.
+- If you did not understand what they said, ask them in the language they used: "माफ करा, पुन्हा सांगाल का?" for Marathi, "ಕ್ಷಮಿಸಿ, ಮತ್ತೆ ಹೇಳುತ್ತೀರಾ?" for Kannada.`;
 
 /** The first thing the person hears. It names the AI and says the call is written down. */
 export function openingLine(brief: Pick<CallBrief, 'userName' | 'toName' | 'language' | 'recorded'>): string {
@@ -69,7 +80,7 @@ YOU ARE ON A LIVE PHONE CALL. It has just connected.
 
 HOW TO BEHAVE
 - You have said who you are and that the call is ${brief.recorded ? 'recorded' : 'written down'}. If asked, say so plainly, and that you are an AI assistant calling for ${user}. Never pretend to be a human.
-- ${LANGUAGE_RULE[brief.language]}
+- ${LANGUAGE_RULE[brief.language]} ${SWITCHING_RULE}
 - Be brief. One or two short sentences at a time, and one question at a time. This is a phone call, so never read out lists or long explanations.
 - Answer quickly. A pause makes the other person think the line has dropped.
 - Get what the task needs (for example an appointment date and time, whether something is possible, a price), then repeat the key details back to confirm: names, dates, times, amounts.

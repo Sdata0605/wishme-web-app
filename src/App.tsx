@@ -103,6 +103,7 @@ const AdminMediaLibrary = lazyRetry(() => import("./pages/admin/AdminMediaLibrar
 const AdminBannerMediaLibrary = lazyRetry(() => import("./pages/admin/AdminBannerMediaLibrary"));
 const AdminMessaging = lazyRetry(() => import("./pages/admin/AdminMessaging"));
 const AdminCommunicationHub = lazyRetry(() => import("./pages/admin/AdminCommunicationHub"));
+const AdminTickets = lazyRetry(() => import("./pages/admin/AdminTickets"));
 const AdminApiHealth = lazyRetry(() => import("./pages/admin/AdminApiHealth"));
 const AdminAIAssistant = lazyRetry(() => import("./pages/admin/AdminAIAssistant"));
 const AdminAuditLog = lazyRetry(() => import("./pages/admin/AdminAuditLog"));
@@ -307,6 +308,7 @@ const App = () => {
               <Route path="banner-media-library" element={<AdminBannerMediaLibrary />} />
               <Route path="messaging" element={<Navigate to="/admin/communication-hub" replace />} />
               <Route path="communication-hub" element={<AdminCommunicationHub />} />
+              <Route path="tickets" element={<AdminTickets />} />
               <Route path="ai-assistant" element={<AdminAIAssistant />} />
               <Route path="api-health" element={<AdminApiHealth />} />
               <Route path="audit-log" element={<AdminAuditLog />} />

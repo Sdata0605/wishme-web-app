@@ -10,7 +10,7 @@
 
 import NodeWebSocket from 'npm:ws';
 import { PhoneEncoder, phoneToEngine } from '../_shared/callAudio.ts';
-import { speakPhoneNumbers } from '../_shared/spokenDigits.ts';
+import { languageOfSpeech, romanLanguage, scriptLanguage, speakPhoneNumbers } from '../_shared/spokenDigits.ts';
 import { CALL_TOOLS, callSystemPrompt, openingLine, type CallBrief } from '../_shared/callPrompt.ts';
 import type { Bridge, BridgeEvents, InboundFormat } from './bridge.ts';
 
@@ -53,6 +53,21 @@ export interface SarvamVoice {
   speaker: string;
 }
 
+/** Every language the voice can speak; anything else is read as the language the call started in. */
+const SPEAKABLE = new Set<string>(['en-IN', 'hi-IN', 'mr-IN', 'bn-IN', 'gu-IN', 'kn-IN', 'ml-IN', 'od-IN', 'pa-IN', 'ta-IN', 'te-IN']);
+
+/** Names given to the model, so it knows which language to write its reply in. */
+const LANGUAGE_NAME: Record<string, string> = {
+  'en-IN': 'English', 'hi-IN': 'Hindi', 'mr-IN': 'Marathi', 'bn-IN': 'Bengali', 'gu-IN': 'Gujarati', 'kn-IN': 'Kannada',
+  'ml-IN': 'Malayalam', 'od-IN': 'Odia', 'pa-IN': 'Punjabi', 'ta-IN': 'Tamil', 'te-IN': 'Telugu',
+};
+
+/**
+ * Sarvam's bulbul:v4 speakers are for English and Hindi only. Every other language is spoken by the bulbul:v3
+ * speaker that the in-app assistant already uses for all of them.
+ */
+const indicVoice = (gender: 'female' | 'male'): SarvamVoice => ({ model: 'bulbul:v3', speaker: gender === 'male' ? 'shubh' : 'ritu' });
+
 const toOpenAiTools = (decls: typeof CALL_TOOLS) =>
   decls.map((d) => ({
     type: 'function',
@@ -68,7 +83,10 @@ export class SarvamCallBridge implements Bridge {
   private tts: Sock | null = null;
   private sttQueue: string[] = [];
   private messages: Json[] = [];
+  /** The language the voice speaks now. It follows the other person, whatever language the call started in. */
   private ttsLang: string;
+  /** The language the other person last spoke, so the model can be told to answer in it. */
+  private replyLang: string;
   private closed = false;
   /** Bumped whenever the person interrupts, so stale audio and replies are dropped. */
   private gen = 0;
@@ -94,6 +112,7 @@ export class SarvamCallBridge implements Bridge {
   ) {
     this.voice = opts.voice;
     this.ttsLang = brief.language === 'english' ? 'en-IN' : 'hi-IN';
+    this.replyLang = this.ttsLang;
     this.messages = [{ role: 'system', content: callSystemPrompt(brief) }];
   }
 
@@ -150,8 +169,9 @@ export class SarvamCallBridge implements Bridge {
   // ─── Hearing ───────────────────────────────────────────────────────────────
 
   private connectStt() {
-    const lang = this.brief.language === 'english' ? 'en-IN' : this.brief.language === 'hindi' ? 'hi-IN' : 'auto';
-    const ws = openSarvamSocket(`${STT_URL}${lang}`, 'api-subscription-key', this.opts.apiKey);
+    // Always auto-detect: the other person may speak any language, and may change language mid-call. A fixed
+    // language here would make the recogniser mishear everything else.
+    const ws = openSarvamSocket(`${STT_URL}auto`, 'api-subscription-key', this.opts.apiKey);
     this.stt = ws;
     ws.onopen = () => {
       for (const f of this.sttQueue.splice(0)) ws.send(f);
@@ -160,7 +180,12 @@ export class SarvamCallBridge implements Bridge {
       let j: Json;
       try { j = JSON.parse(e.data); } catch { return; }
       if (j.event === 'vad.speech_start' && this.isSpeaking()) this.interrupt();
-      else if (j.event === 'transcript.final' && typeof j.text === 'string') this.onHeard(j.text);
+      else if (j.event === 'transcript.final' && typeof j.text === 'string') {
+        // The realtime endpoint names the detected language `language` (BCP-47, e.g. "mr-IN"). Odia comes as "or-IN".
+        const detected = String(j.language ?? j.language_code ?? '').replace(/^or-IN$/, 'od-IN');
+        console.log(`[sarvam-call] stt final keys=${Object.keys(j).join(',')} language=${j.language ?? 'none'} conf=${j.language_confidence ?? 'none'} text="${String(j.text).slice(0, 60)}"`);
+        void this.onHeard(j.text, detected);
+      }
     };
     ws.onclose = () => {
       if (!this.closed) setTimeout(() => !this.closed && this.connectStt(), 300);
@@ -168,13 +193,85 @@ export class SarvamCallBridge implements Bridge {
     ws.onerror = () => {};
   }
 
-  private onHeard(text: string) {
+  private async onHeard(text: string, label: string) {
     const spoken = text.trim();
     if (spoken.length < 2) return;
+    // Stop the old reply at once, so the caller is not talked over while the language is being worked out.
     if (this.isSpeaking()) this.interrupt();
+    const script = scriptLanguage(spoken);
+    const shortLatin = script === 'latin' && spoken.split(/\s+/).length < 3;
+    let heard: string | null;
+    if (script === 'latin') {
+      // Latin letters can be English, or any Indian language typed in English letters. The recogniser's own label
+      // is trusted when it names an Indian language; otherwise the model judges the language from its meaning.
+      const labelIndian = SPEAKABLE.has(label) && label !== 'en-IN' ? label : null;
+      heard = labelIndian ?? (shortLatin ? null : await this.judgeLanguage(spoken));
+    } else {
+      heard = languageOfSpeech(spoken, label);
+    }
+    console.log(`[sarvam-call] heard (${label || 'no label'}, ${script ?? 'no letters'}): ${heard ?? 'kept current language'}`);
+    const before = this.replyLang;
+    if (heard && SPEAKABLE.has(heard)) this.switchLanguage(heard);
     this.events.onLine('user', spoken);
-    this.messages.push({ role: 'user', content: spoken });
+    // The model writes its reply in the language it is told about here, so it must hear about every change.
+    const changed = this.replyLang !== before;
+    const name = LANGUAGE_NAME[this.replyLang] ?? 'English';
+    // The note travels with the speech itself, so the model cannot answer it in English out of habit.
+    const note = changed || this.replyLang !== 'en-IN'
+      ? `[Note, not spoken by them] They are speaking ${name}. Reply ONLY in ${name}, in its own script, with no English sentence.\n`
+      : '';
+    this.messages.push({ role: 'user', content: note + spoken });
     void this.runTurn();
+  }
+
+  /**
+   * Which Indian language a Latin-letter sentence is in, judged by the chat model from its meaning. Works for any
+   * language, whatever its spelling. Falls back to the word lists, then to English, if the model does not answer.
+   */
+  private async judgeLanguage(spoken: string): Promise<string | null> {
+    const codes = [...SPEAKABLE].join(', ');
+    try {
+      const res = await fetch(CHAT_URL, {
+        method: 'POST',
+        signal: AbortSignal.timeout(2500),
+        headers: { 'api-subscription-key': this.opts.apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: this.opts.model,
+          messages: [
+            { role: 'system', content: `The text is a phone caller's speech written in Latin letters. It may be English, or any Indian language (Hindi, Marathi, Kannada, Tamil, Telugu, Malayalam, Bengali, Gujarati, Punjabi, Odia) typed in English letters. Reply with only one code from this list: ${codes}. Judge by the meaning, not the spelling.` },
+            { role: 'user', content: spoken },
+          ],
+          temperature: 0,
+          max_tokens: 8,
+          stream: false,
+        }),
+      });
+      if (res.ok) {
+        const j = await res.json() as { choices?: { message?: { content?: string } }[] };
+        const code = (j.choices?.[0]?.message?.content ?? '').match(/[a-z]{2}-IN/i)?.[0]?.toLowerCase();
+        const found = code ? [...SPEAKABLE].find((c) => c.toLowerCase() === code) : undefined;
+        if (found) return found;
+      }
+    } catch (e) {
+      console.error('[sarvam-call] language judge failed:', e instanceof Error ? e.message : e);
+    }
+    return romanLanguage(spoken) ?? 'en-IN';
+  }
+
+  /**
+   * Moves the voice to another language. Sarvam fixes the language when a speech connection opens, so the
+   * connection is dropped and the next sentence opens a fresh one. Indian languages other than English and
+   * Hindi use the bulbul:v3 voice, so the model is changed too.
+   */
+  private switchLanguage(code: string) {
+    console.log(`[sarvam-call] voice lang ${this.ttsLang} -> ${code}`);
+    if (code === this.replyLang) return;
+    this.replyLang = code;
+    if (code === this.ttsLang) return;
+    this.ttsLang = code;
+    this.voice = code === 'en-IN' || code === 'hi-IN' ? this.opts.voice : indicVoice(this.brief.gender ?? 'female');
+    try { this.tts?.close(); } catch { /* already closed */ }
+    this.tts = null;
   }
 
   private interrupt() {
@@ -274,7 +371,11 @@ export class SarvamCallBridge implements Bridge {
   private async speak(text: string, gen: number) {
     // Phone numbers are written out digit by digit in the language of the sentence, so the voice cannot
     // read them in the wrong one.
-    const clean = speakPhoneNumbers(text.replace(/[*_`#]/g, '').trim(), this.ttsLang);
+    const plain = text.replace(/[*_`#]/g, '').trim();
+    // The voice follows the language the reply is actually written in (the model may answer in Devanagari Marathi).
+    const written = scriptLanguage(plain);
+    if (written && written !== 'latin' && SPEAKABLE.has(written) && written !== this.ttsLang) this.switchLanguage(written);
+    const clean = speakPhoneNumbers(plain, this.ttsLang);
     if (!clean) return;
     if (!this.tts || this.tts.readyState > 1) await this.connectTts();
     else await this.ttsReady; // still opening (for instance right after an interruption): wait, do not drop the sentence
@@ -286,6 +387,16 @@ export class SarvamCallBridge implements Bridge {
   private async runTurn() {
     this.abort?.abort();
     const gen = ++this.gen;
+    // The language rule goes in the system prompt, not only in a note: the model follows it far more reliably.
+    // Without this, the model kept answering in English after the caller had switched.
+    const replyName = LANGUAGE_NAME[this.replyLang];
+    this.messages[0] = {
+      role: 'system',
+      content: replyName && this.replyLang !== 'en-IN'
+        ? `${callSystemPrompt(this.brief)}\n\nLANGUAGE FOR THIS REPLY: the caller is speaking ${replyName}. Write every word of your reply in ${replyName}, in its own script. Never answer in English while the caller is speaking ${replyName}.`
+        : callSystemPrompt(this.brief),
+    };
+    console.log(`[sarvam-call] reply language: ${replyName ?? this.replyLang}`);
     const abort = new AbortController();
     this.abort = abort;
 

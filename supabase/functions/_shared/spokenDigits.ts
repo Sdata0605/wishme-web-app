@@ -88,10 +88,37 @@ export function scriptLanguage(text: string): TtsLang | 'latin' | null {
  * recogniser's own label, which tags a lot of Indian-accented English as Hindi. Returns null if there is
  * nothing to go on (so the caller keeps the language it already has).
  */
+/** Romanised (Latin-letter) Marathi and Hindi words. Used only when the text has no Indic script at all. */
+const ROMAN_MARATHI = /\b(tumhi|tumhala|tumhe|kon|ahat|aahat|aahe|ahe|mala|majha|mazha|kay|kasa|kashi|nahi|bola|sanga|aamhi|pahije|madhe|tumcha|tumchi)\b/gi;
+const ROMAN_HINDI = /\b(aap|kya|hai|hain|kaun|mujhe|mera|meri|kyun|bataiye|kaise|kahan|hum|tum)\b/gi;
+
+/** Marathi or Hindi typed in English letters ("tumhi kon ahat", "aap kaun hain"), judged by its words. */
+export function romanLanguage(text: string): 'mr-IN' | 'hi-IN' | null {
+  const mr = (text.match(ROMAN_MARATHI) ?? []).length;
+  const hi = (text.match(ROMAN_HINDI) ?? []).length;
+  if (mr >= 2 || (mr > hi && mr >= 1)) return 'mr-IN';
+  if (hi >= 2 || (hi > mr && hi >= 1)) return 'hi-IN';
+  return null;
+}
+
+/** Words that only Marathi uses (Hindi has है, था, किया, आप, चाहिए, मेरा where Marathi has आहे, होता, केले, तुम्ही, पाहिजे, माझा). */
+const MARATHI_WORDS = /(?:^|[\s,।?!])(?:आहे|आहेत|आहात|आहोत|होता|होती|होते|केले|केली|झाले|झाली|पाहिजे|माझा|माझी|माझे|तुम्ही|तुमचा|तुमची|आम्ही|सांगा|बोला|मराठी|सांगतो|करतो|करते)(?=[\s,।?!]|$)/g;
+/** Words that only Hindi uses in the same places. */
+const HINDI_WORDS = /(?:^|[\s,।?!])(?:है|हैं|था|थी|थे|किया|किये|हुआ|हुई|चाहिए|मेरा|मेरी|मेरे|आप|बताइए|बताएं|कीजिए|करता|करती|हिंदी)(?=[\s,।?!]|$)/g;
+
+/** Devanagari is shared by Hindi and Marathi; the words used decide which one was spoken. */
+function devanagariLanguage(text: string): TtsLang {
+  const mr = (text.match(MARATHI_WORDS) ?? []).length;
+  const hi = (text.match(HINDI_WORDS) ?? []).length;
+  return mr > hi ? 'mr-IN' : 'hi-IN';
+}
+
 export function languageOfSpeech(text: string, label: string): TtsLang | null {
   const guess = scriptLanguage(text);
   if (guess === 'latin') return 'en-IN';
-  if (guess === 'hi-IN' && label === 'mr-IN') return 'mr-IN'; // Devanagari is shared; trust the label for the pair
+  // The recogniser's own label wins when it names Marathi; otherwise the words decide.
+  if (guess === 'hi-IN' && label === 'mr-IN') return 'mr-IN';
+  if (guess === 'hi-IN') return devanagariLanguage(text);
   if (guess) return guess;
   return label in DIGITS ? (label as TtsLang) : null;
 }

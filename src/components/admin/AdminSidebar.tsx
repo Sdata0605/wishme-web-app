@@ -1,4 +1,6 @@
 import { NavLink, useLocation } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import {
   Sidebar,
   SidebarContent,
@@ -36,6 +38,7 @@ import {
   FolderKanban,
   Layers,
   Bot,
+  LifeBuoy,
 } from "lucide-react";
 import { Database } from "lucide-react";
 
@@ -56,11 +59,40 @@ const adminNavItems = [
   { title: "Media Library", url: "/admin/media-library", icon: Video },
   { title: "Banner Media", url: "/admin/banner-media-library", icon: Image },
   { title: "Communication Hub", url: "/admin/communication-hub", icon: Mail },
+  { title: "Tickets", url: "/admin/tickets", icon: LifeBuoy },
   { title: "AI Assistant", url: "/admin/ai-assistant", icon: Bot },
   { title: "API Health", url: "/admin/api-health", icon: Activity },
   { title: "Database Backup", url: "/admin/database-backup", icon: Database },
   { title: "Settings", url: "/admin/settings", icon: Settings },
 ];
+
+function TicketsOpenBadge() {
+  const { data: openCount = 0 } = useQuery({
+    queryKey: ["admin-support-open-count"],
+    queryFn: async () => {
+      const { count, error } = await (supabase as any)
+        .from("support_tickets")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "open");
+      if (error) throw error;
+      return (count ?? 0) as number;
+    },
+    refetchInterval: 60_000,
+  });
+
+  if (openCount <= 0) return null;
+
+  return (
+    <>
+      {/* Expanded: numeric count */}
+      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground group-data-[collapsible=icon]:hidden">
+        {openCount > 99 ? "99+" : openCount}
+      </span>
+      {/* Collapsed to icons: plain dot */}
+      <span className="pointer-events-none absolute right-1.5 top-1.5 hidden h-2 w-2 rounded-full bg-primary group-data-[collapsible=icon]:block" />
+    </>
+  );
+}
 
 export function AdminSidebar() {
   const { open, setOpen, setOpenMobile, isMobile } = useSidebar();
@@ -133,6 +165,7 @@ export function AdminSidebar() {
                       <span>{item.title}</span>
                     </NavLink>
                   </SidebarMenuButton>
+                  {item.url === "/admin/tickets" && <TicketsOpenBadge />}
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>
